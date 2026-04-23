@@ -6,7 +6,7 @@ import random
 import time
 import uuid
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import aiohttp
@@ -38,6 +38,7 @@ class ShazamRecognizer:
     clip_directory: Path = settings.clip_storage_directory
     language: str = "en-US"
     endpoint_country: str = "US"
+    recognizer: Recognizer = field(init=False)
 
     def __post_init__(self) -> None:
         self.clip_directory.mkdir(parents=True, exist_ok=True)
