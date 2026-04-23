@@ -26,71 +26,80 @@ HTML = """<!doctype html>
   <title>ScrobbleBox Lyrics</title>
   <style>
     :root {
-      --bg-1: #0a1326;
-      --bg-2: #13294b;
-      --panel: rgba(7, 16, 31, 0.72);
+      --bg-1: #08111f;
+      --bg-2: #102742;
+      --bg-3: #173553;
+      --panel: rgba(9, 19, 34, 0.84);
+      --panel-soft: rgba(19, 34, 56, 0.9);
       --panel-border: rgba(255, 255, 255, 0.08);
-      --text: #f5f7fb;
-      --muted: #9fb0c8;
-      --accent: #ffd166;
-      --accent-2: #64dfdf;
-      --danger: #ef476f;
+      --text: #f7fafc;
+      --muted: #b8c6d8;
+      --accent: #79f2c0;
+      --accent-2: #8ec5ff;
       --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: Georgia, "Times New Roman", serif;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(255, 209, 102, 0.16), transparent 35%),
-        radial-gradient(circle at bottom right, rgba(100, 223, 223, 0.15), transparent 30%),
-        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+        radial-gradient(circle at top left, rgba(121, 242, 192, 0.16), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(142, 197, 255, 0.18), transparent 30%),
+        linear-gradient(145deg, var(--bg-1), var(--bg-2) 52%, var(--bg-3));
       overflow: hidden;
     }
     .shell {
       display: grid;
-      grid-template-columns: minmax(320px, 34vw) 1fr;
+      grid-template-columns: minmax(360px, 33vw) 1fr;
       min-height: 100vh;
-      gap: 24px;
+      gap: 28px;
       padding: 28px;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--panel-border);
-      border-radius: 28px;
+      border-radius: 32px;
       box-shadow: var(--shadow);
       backdrop-filter: blur(22px);
     }
     .info {
-      padding: 24px;
+      padding: 28px;
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 22px;
     }
     .chip {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 16px;
+      padding: 10px 18px;
       border-radius: 999px;
-      background: rgba(255, 209, 102, 0.12);
+      background: rgba(121, 242, 192, 0.12);
       color: var(--accent);
       text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: 12px;
+      letter-spacing: 0.2em;
+      font-size: 13px;
+      font-weight: 700;
       width: fit-content;
     }
     .cover {
       width: 100%;
       aspect-ratio: 1 / 1;
-      border-radius: 24px;
+      border-radius: 26px;
       object-fit: cover;
       background:
         linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
         repeating-linear-gradient(45deg, rgba(255,255,255,0.03), rgba(255,255,255,0.03) 12px, transparent 12px, transparent 24px);
       border: 1px solid rgba(255,255,255,0.08);
+    }
+    .eyebrow {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 12px;
+      font-weight: 700;
     }
     .marquee {
       overflow: hidden;
@@ -101,13 +110,26 @@ HTML = """<!doctype html>
       display: inline-block;
       padding-right: 2rem;
       min-width: 100%;
-      animation: marquee 14s linear infinite;
+      animation: marquee 18s linear infinite;
     }
-    .title { font-size: clamp(36px, 4vw, 64px); line-height: 0.95; font-weight: 700; }
-    .meta { color: var(--muted); font-size: clamp(18px, 1.8vw, 26px); }
+    .title {
+      font-size: clamp(46px, 5.6vw, 86px);
+      line-height: 0.92;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .artist {
+      color: var(--text);
+      font-size: clamp(22px, 2.2vw, 34px);
+      font-weight: 700;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: clamp(18px, 1.8vw, 26px);
+    }
     .bar {
       position: relative;
-      height: 12px;
+      height: 14px;
       border-radius: 999px;
       background: rgba(255,255,255,0.08);
       overflow: hidden;
@@ -122,40 +144,48 @@ HTML = """<!doctype html>
       display: flex;
       justify-content: space-between;
       color: var(--muted);
-      font-size: 18px;
+      font-size: 20px;
+      font-weight: 600;
       letter-spacing: 0.04em;
     }
     .lyrics {
       padding: 28px;
       display: grid;
-      grid-template-rows: 1fr 1fr 1fr;
-      gap: 18px;
+      grid-template-rows: 0.8fr 1.05fr 0.8fr;
+      gap: 22px;
       min-height: 0;
     }
     .card {
-      border-radius: 24px;
+      border-radius: 28px;
       border: 1px solid rgba(255,255,255,0.08);
       background: rgba(255,255,255,0.04);
       display: flex;
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 24px;
-      font-size: clamp(22px, 2.5vw, 40px);
-      line-height: 1.15;
-      transition: transform 240ms ease, background 240ms ease, opacity 240ms ease;
+      padding: 28px 42px;
+      font-size: clamp(28px, 3vw, 44px);
+      line-height: 1.2;
+      font-weight: 600;
+      transition: transform 240ms ease, background 240ms ease, opacity 240ms ease, border-color 240ms ease;
     }
     .card.current {
-      background: linear-gradient(135deg, rgba(255,209,102,0.16), rgba(100,223,223,0.12));
-      border-color: rgba(255,209,102,0.28);
+      background: linear-gradient(135deg, rgba(121,242,192,0.16), rgba(142,197,255,0.14));
+      border-color: rgba(121,242,192,0.36);
       transform: scale(1.015);
+      font-size: clamp(38px, 4.2vw, 68px);
+      font-weight: 800;
     }
-    .message { color: var(--muted); }
+    .message {
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+    }
     .statusline {
       display: flex;
       justify-content: space-between;
       color: var(--muted);
-      font-size: 14px;
+      font-size: 15px;
+      font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
@@ -175,8 +205,9 @@ HTML = """<!doctype html>
     <section class="panel info">
       <div class="chip" id="chip">Listening</div>
       <img class="cover" id="cover" alt="Album art">
+      <div class="eyebrow">Now Spinning</div>
       <div class="marquee title"><span id="title">Listening...</span></div>
-      <div class="marquee meta"><span id="artist">ScrobbleBox</span></div>
+      <div class="marquee artist"><span id="artist">ScrobbleBox</span></div>
       <div class="marquee meta"><span id="album">Waiting for verified playback</span></div>
       <div class="bar"><div id="progress"></div></div>
       <div class="times">

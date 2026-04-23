@@ -59,6 +59,11 @@ def query_variants(value: str) -> list[str]:
     return [candidate for candidate in candidates if candidate]
 
 
+DEFAULT_TRACK_SECONDS = 210
+LYRIC_END_GRACE_SECONDS = 8
+MIN_TRACK_SECONDS = 90
+
+
 class LyricRepository:
     def __init__(self, root: Path = settings.lyrics_directory) -> None:
         self.root = root
@@ -81,12 +86,15 @@ class LyricRepository:
         artist = slugify(state.get("artist", ""))
         album = slugify(state.get("album", ""))
         release_id = state.get("release_id")
+        position = slugify(state.get("position", ""))
         candidates: list[Path] = []
-        if release_id:
+        if release_id and position:
             candidates.extend(
                 [
-                    self.root / f"{release_id}.lrc",
-                    self.root / f"{release_id}.json",
+                    self.root / str(release_id) / f"{position}.lrc",
+                    self.root / str(release_id) / f"{position}.json",
+                    self.root / str(release_id) / f"{position}-{title}.lrc",
+                    self.root / str(release_id) / f"{position}-{title}.json",
                 ]
             )
         if artist and title:
@@ -196,18 +204,43 @@ class LyricRepository:
         return LyricsDocument(lines=lines, instrumental=instrumental)
 
 
-def infer_track(raw_state: dict[str, Any]) -> dict[str, Any]:
+def estimated_duration_seconds(state: dict[str, Any], lyrics: LyricsDocument | None) -> int:
+    explicit_duration = state.get("duration_seconds")
+    if explicit_duration and explicit_duration > 0:
+        return int(explicit_duration)
+    if lyrics and lyrics.lines:
+        lyric_end = max(line.time_seconds for line in lyrics.lines)
+        return max(MIN_TRACK_SECONDS, int(lyric_end + LYRIC_END_GRACE_SECONDS))
+    return DEFAULT_TRACK_SECONDS
+
+
+def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], started_at: datetime) -> dict[str, Any]:
+    state = dict(base_state)
+    state["status"] = "inferred"
+    state["title"] = track.get("title", state.get("title", ""))
+    state["artist"] = track.get("artist") or state.get("artist", "")
+    state["lyric_title"] = state["title"]
+    state["lyric_artist"] = state["artist"]
+    state["lyric_album"] = state.get("lyric_album") or state.get("album", "")
+    state["position"] = track.get("position")
+    state["side"] = track.get("side")
+    state["duration_seconds"] = track.get("duration_seconds")
+    state["started_at"] = started_at.isoformat()
+    return state
+
+
+def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics: LyricsDocument | None) -> tuple[dict[str, Any], LyricsDocument | None, int]:
     state = dict(raw_state)
     started_at = parse_iso_utc(state.get("started_at"))
-    duration = state.get("duration_seconds")
-    if not started_at or not duration or duration <= 0:
-        return state
+    if not started_at:
+        return state, initial_lyrics, 0
 
     release_tracks = list(state.get("release_tracks") or [])
     position = state.get("position")
     side = state.get("side")
     if not release_tracks or not position:
-        return state
+        duration = estimated_duration_seconds(state, initial_lyrics)
+        return state, initial_lyrics, duration
 
     remaining = (utc_now() - started_at).total_seconds()
     current_index = next(
@@ -215,31 +248,33 @@ def infer_track(raw_state: dict[str, Any]) -> dict[str, Any]:
         None,
     )
     if current_index is None:
-        return state
+        duration = estimated_duration_seconds(state, initial_lyrics)
+        return state, initial_lyrics, duration
+
+    current_started_at = started_at
+    current_lyrics = initial_lyrics
 
     while current_index < len(release_tracks):
         track = release_tracks[current_index]
-        track_duration = track.get("duration_seconds")
         track_side = track.get("side")
         if current_index > 0 and track_side != side:
             break
-        if not track_duration or track_duration <= 0:
-            break
+
+        track_state = state if current_index == 0 else inferred_track_state(state, track, current_started_at)
+        track_lyrics = current_lyrics if current_index == 0 else repo.load(track_state)
+        track_duration = estimated_duration_seconds(track_state, track_lyrics)
         if remaining <= track_duration:
             if current_index == 0:
-                return state
-            state["status"] = "inferred"
-            state["title"] = track.get("title", state.get("title", ""))
-            state["artist"] = track.get("artist") or state.get("artist", "")
-            state["position"] = track.get("position")
-            state["side"] = track_side
-            state["duration_seconds"] = track_duration
-            state["started_at"] = (utc_now() - timedelta(seconds=remaining)).isoformat()
-            return state
+                return state, track_lyrics, track_duration
+            inferred_started_at = utc_now() - timedelta(seconds=remaining)
+            inferred_state = inferred_track_state(state, track, inferred_started_at)
+            return inferred_state, track_lyrics, track_duration
         remaining -= track_duration
         current_index += 1
+        current_started_at = current_started_at + timedelta(seconds=track_duration)
 
-    return state
+    duration = estimated_duration_seconds(state, initial_lyrics)
+    return state, initial_lyrics, duration
 
 
 def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:
@@ -265,18 +300,28 @@ def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track
 
 
 def build_view_model(raw_state: dict[str, Any], repo: LyricRepository) -> dict[str, Any]:
-    inferred = infer_track(raw_state)
+    initial_lyrics = repo.load(raw_state) if raw_state.get("title") else None
+    inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
     started_at = parse_iso_utc(inferred.get("started_at"))
     elapsed = max(0, int((utc_now() - started_at).total_seconds())) if started_at else 0
-    duration = inferred.get("duration_seconds") or 0
 
     # Never show backward motion: the browser increments locally between polls and the
     # server only moves the track start earlier, never later.
-    lyrics = repo.load(inferred)
     prev_text, current_text, next_text = lyric_cards(lyrics, elapsed, bool(inferred.get("title")))
 
+    if inferred.get("title"):
+        release_tracks = list(inferred.get("release_tracks") or [])
+        current_index = next(
+            (i for i, item in enumerate(release_tracks) if item.get("position") == inferred.get("position")),
+            None,
+        )
+        if current_index is not None and current_index + 1 < len(release_tracks):
+            next_track = release_tracks[current_index + 1]
+            if next_track.get("side") == inferred.get("side"):
+                repo.load(inferred_track_state(inferred, next_track, utc_now()))
+
     inferred["elapsed_seconds"] = elapsed
-    inferred["display_duration_seconds"] = duration if duration > 0 else 0
+    inferred["display_duration_seconds"] = display_duration if display_duration > 0 else 0
     inferred["previous_lyric"] = prev_text
     inferred["current_lyric"] = current_text
     inferred["next_lyric"] = next_text
