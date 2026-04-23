@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from scrobblebox.config import settings
 
 
@@ -41,11 +43,18 @@ def slugify(value: str) -> str:
 class LyricRepository:
     def __init__(self, root: Path = settings.lyrics_directory) -> None:
         self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "ScrobbleBox/0.1 (+https://github.com/ephun/scrobblebox)"})
 
     def load(self, state: dict[str, Any]) -> LyricsDocument | None:
-        for path in self._candidate_paths(state):
+        candidates = self._candidate_paths(state)
+        for path in candidates:
             if path.exists():
                 return self._read(path)
+        fetched = self._fetch_and_cache(state, candidates)
+        if fetched is not None:
+            return fetched
         return None
 
     def _candidate_paths(self, state: dict[str, Any]) -> list[Path]:
@@ -97,6 +106,69 @@ class LyricRepository:
                 minutes = int(match.group(1))
                 seconds = float(match.group(2))
                 lines.append(LyricLine(minutes * 60 + seconds, text))
+        lines.sort(key=lambda item: item.time_seconds)
+        return LyricsDocument(lines=lines, instrumental=instrumental)
+
+    def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
+        title = state.get("title", "")
+        artist = state.get("artist", "")
+        if not title or not artist:
+            return None
+        params = {
+            "track_name": title,
+            "artist_name": artist,
+        }
+        album = state.get("album")
+        if album:
+            params["album_name"] = album
+        duration = state.get("duration_seconds")
+        if duration:
+            params["duration"] = duration
+
+        response = self.session.get("https://lrclib.net/api/search", params=params, timeout=20)
+        response.raise_for_status()
+        results = response.json()
+        if not results:
+            return None
+
+        best = results[0]
+        document = self._document_from_result(best)
+        target = next((path for path in candidates if path.suffix.lower() == ".json"), None)
+        if target is not None:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "instrumental": bool(best.get("instrumental", False)),
+                "lines": [
+                    {"time_seconds": line.time_seconds, "text": line.text}
+                    for line in document.lines
+                ],
+            }
+            target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return document
+
+    def _document_from_result(self, result: dict[str, Any]) -> LyricsDocument:
+        synced = result.get("syncedLyrics")
+        if synced:
+            return self._parse_lrc(str(synced), instrumental=bool(result.get("instrumental", False)))
+        plain = result.get("plainLyrics")
+        if plain:
+            return LyricsDocument(
+                lines=[LyricLine(float(index * 4), line) for index, line in enumerate(str(plain).splitlines()) if line.strip()],
+                instrumental=bool(result.get("instrumental", False)),
+            )
+        return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
+
+    def _parse_lrc(self, text: str, *, instrumental: bool = False) -> LyricsDocument:
+        lines: list[LyricLine] = []
+        for raw_line in text.splitlines():
+            matches = list(re.finditer(r"\[(\d+):(\d+(?:\.\d+)?)\]", raw_line))
+            if not matches:
+                continue
+            content = re.sub(r"\[[^\]]+\]", "", raw_line).strip()
+            for match in matches:
+                minutes = int(match.group(1))
+                seconds = float(match.group(2))
+                lines.append(LyricLine(minutes * 60 + seconds, content))
         lines.sort(key=lambda item: item.time_seconds)
         return LyricsDocument(lines=lines, instrumental=instrumental)
 
