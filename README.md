@@ -57,3 +57,6 @@ Current placeholders cover:
 - Runtime configuration is centralized in `scrobblebox.config`.
 - Modules currently provide scaffolding and typed domain models so implementation can grow cleanly from the initial spec.
 
+## Raspberry Pi
+
+Deployment notes and `systemd` unit templates live in [`docs/raspberry-pi-setup.md`](docs/raspberry-pi-setup.md) and [`deploy/systemd/`](deploy/systemd/).

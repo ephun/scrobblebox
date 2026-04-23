@@ -1,0 +1,16 @@
+[Unit]
+Description=ScrobbleBox Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/scrobblebox
+EnvironmentFile=/opt/scrobblebox/.env
+ExecStart=/opt/scrobblebox/.venv/bin/python -m scrobblebox.core.service
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

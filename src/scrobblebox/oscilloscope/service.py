@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import sleep
 
 from scrobblebox.config import settings
 
@@ -17,6 +18,15 @@ class OscilloscopeService:
         print(f"Target device: {self.device_alias}")
         print(f"Idle timeout: {self.idle_minutes} minutes")
         print("Status: scaffold initialized, smart plug integration not implemented yet.")
+        self._serve_forever()
+
+    def _serve_forever(self) -> None:
+        """Keep the scaffold alive under process supervisors like systemd."""
+        try:
+            while True:
+                sleep(60)
+        except KeyboardInterrupt:
+            print("ScrobbleBox Oscilloscope stopped.")
 
 
 def main() -> None:
@@ -25,4 +35,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

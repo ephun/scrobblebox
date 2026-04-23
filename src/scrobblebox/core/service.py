@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import sleep
 
 from scrobblebox.config import settings
 
@@ -18,6 +19,15 @@ class CoreService:
         print(f"Input device: {settings.audio_input_device}")
         print(f"Clip length: {self.clip_seconds}s")
         print("Status: scaffold initialized, recognition loop not implemented yet.")
+        self._serve_forever()
+
+    def _serve_forever(self) -> None:
+        """Keep the scaffold alive under process supervisors like systemd."""
+        try:
+            while True:
+                sleep(60)
+        except KeyboardInterrupt:
+            print("ScrobbleBox Core stopped.")
 
 
 def main() -> None:
@@ -26,4 +36,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
