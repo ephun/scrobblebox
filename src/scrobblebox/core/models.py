@@ -9,6 +9,7 @@ class Track:
     title: str
     artist: str
     album: str
+    release_id: int | None = None
     side: str | None = None
     position: str | None = None
     duration_seconds: int | None = None
@@ -19,6 +20,9 @@ class RecognitionResult:
     title: str
     artist: str
     offset_seconds: int
+    album: str | None = None
+    shazam_track_id: str | None = None
+    raw: dict | None = None
     recognized_at: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -28,3 +32,11 @@ class PlaybackWindow:
     continuous_audio_seconds: int = 0
     silence_tolerance_seconds: int = 5
 
+
+@dataclass(slots=True)
+class PendingScrobble:
+    track: Track
+    started_at: datetime
+    scrobble_at: datetime
+    now_playing_sent: bool = False
+    scrobbled: bool = False
