@@ -54,11 +54,13 @@ class AudioCapture:
     block_seconds: float = settings.audio_block_seconds
     device_name: str = settings.audio_input_device
     block_queue: queue.Queue[AudioChunk] = field(default_factory=queue.Queue)
+    device: int | None = field(init=False)
+    blocksize: int = field(init=False)
+    _stream: sd.InputStream | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.device = resolve_input_device(self.device_name)
         self.blocksize = max(1, int(self.samplerate * self.block_seconds))
-        self._stream: sd.InputStream | None = None
 
     def __enter__(self) -> "AudioCapture":
         LOGGER.info("Opening audio input stream")
