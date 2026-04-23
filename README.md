@@ -1,0 +1,59 @@
+# ScrobbleBox v3
+
+ScrobbleBox is a vinyl playback companion built around three coordinated services:
+
+- `scrobblebox.core`: listens to audio input, identifies tracks, validates against Discogs, and scrobbles confirmed or inferred plays.
+- `scrobblebox.lyrics`: drives a now-playing style display with album metadata, timing, and synchronized lyrics.
+- `scrobblebox.oscilloscope`: powers an oscilloscope on when playback starts and off after extended silence.
+
+## Project Layout
+
+```text
+src/scrobblebox/
+  config.py
+  core/
+  lyrics/
+  oscilloscope/
+tests/
+docs/
+```
+
+## Quick Start
+
+1. Create a virtual environment.
+2. Install the package in editable mode:
+
+```powershell
+python -m pip install -e .
+```
+
+3. Copy the example environment file and fill in your credentials:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+4. Run a module entry point once implementation is in place:
+
+```powershell
+python -m scrobblebox.core.service
+```
+
+## Environment Variables
+
+The real `.env` file is ignored by Git. Only `.env.example` should be committed to the public repository.
+
+Current placeholders cover:
+
+- Last.fm API credentials
+- Discogs token and collection identifiers
+- Shazam / audio capture configuration
+- Lyrics server settings
+- Kasa oscilloscope plug settings
+
+## Development Notes
+
+- Python package layout uses `src/` to keep imports explicit.
+- Runtime configuration is centralized in `scrobblebox.config`.
+- Modules currently provide scaffolding and typed domain models so implementation can grow cleanly from the initial spec.
+

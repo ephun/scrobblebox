@@ -1,0 +1,4 @@
+python-dotenv>=1.0.1
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+rapidfuzz>=3.9.0

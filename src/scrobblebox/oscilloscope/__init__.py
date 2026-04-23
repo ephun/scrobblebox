@@ -1,0 +1,2 @@
+"""Oscilloscope power management integration."""
+

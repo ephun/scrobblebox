@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrobblebox"
+version = "0.1.0"
+description = "Vinyl playback scrobbling, lyrics display, and oscilloscope automation."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Ethan" }
+]
+dependencies = [
+  "python-dotenv>=1.0.1",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "rapidfuzz>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "ruff>=0.6.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
