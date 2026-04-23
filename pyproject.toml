@@ -12,6 +12,7 @@ authors = [
   { name = "Ethan" }
 ]
 dependencies = [
+  "aiohttp>=3.13.5",
   "numpy>=2.2.0",
   "python-dotenv>=1.0.1",
   "pydantic>=2.7.0",
@@ -19,7 +20,7 @@ dependencies = [
   "pylast>=7.0.0",
   "rapidfuzz>=3.9.0",
   "requests>=2.32.0",
-  "shazamio>=0.8.1",
+  "shazamio-core==1.1.2",
   "sounddevice>=0.5.3",
 ]
 
