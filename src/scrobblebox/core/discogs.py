@@ -137,6 +137,7 @@ class DiscogsClient:
                 artist=", ".join(entry_artists) if entry_artists else recognition.artist,
                 album=release_title,
                 release_id=int(release_detail["id"]),
+                artwork_url=self._artwork_url(release_detail),
                 side=track_side(entry.get("position")),
                 position=entry.get("position"),
                 duration_seconds=parse_duration_seconds(entry.get("duration")),
@@ -196,3 +197,11 @@ class DiscogsClient:
         response = self.session.get(url, timeout=30)
         response.raise_for_status()
         return response.json()
+
+    @staticmethod
+    def _artwork_url(release_detail: dict[str, Any]) -> str | None:
+        images = release_detail.get("images", [])
+        if not images:
+            return None
+        primary = next((image for image in images if image.get("type") == "primary"), images[0])
+        return primary.get("uri150") or primary.get("uri")

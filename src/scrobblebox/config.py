@@ -35,9 +35,13 @@ class Settings(BaseSettings):
     discogs_match_threshold: int = Field(default=160, alias="DISCOGS_MATCH_THRESHOLD")
     discogs_candidate_limit: int = Field(default=8, alias="DISCOGS_CANDIDATE_LIMIT")
     clip_storage_directory: Path = Field(default=Path("runtime/clips"), alias="CLIP_STORAGE_DIRECTORY")
+    now_playing_state_file: Path = Field(
+        default=Path("runtime/state/now_playing.json"),
+        alias="NOW_PLAYING_STATE_FILE",
+    )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
-    lyrics_host: str = Field(default="127.0.0.1", alias="LYRICS_HOST")
+    lyrics_host: str = Field(default="0.0.0.0", alias="LYRICS_HOST")
     lyrics_port: int = Field(default=8765, alias="LYRICS_PORT")
     lyrics_directory: Path = Field(default=Path("lyrics"), alias="LYRICS_DIRECTORY")
 

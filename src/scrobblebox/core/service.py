@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from queue import Empty
 
 from scrobblebox.config import settings
@@ -12,6 +12,7 @@ from scrobblebox.core.lastfm import LastFMClient
 from scrobblebox.core.models import PendingScrobble
 from scrobblebox.core.recognizer import ShazamRecognizer
 from scrobblebox.core.runtime import build_pending_scrobble, same_track
+from scrobblebox.lyrics.state import DisplayState, StateStore
 
 
 logging.basicConfig(
@@ -43,6 +44,7 @@ class CoreService:
         recognizer = ShazamRecognizer()
         discogs = DiscogsClient()
         lastfm = LastFMClient()
+        state_store = StateStore()
         buffer = RollingAudioBuffer(
             samplerate=settings.audio_sample_rate,
             clip_seconds=self.clip_seconds,
@@ -52,22 +54,34 @@ class CoreService:
         last_audio_at: datetime | None = None
         last_recognition_at = datetime.min
         pending: PendingScrobble | None = None
+        state_store.write(DisplayState.listening())
 
         with AudioCapture() as capture:
             while True:
                 try:
                     chunk = capture.block_queue.get(timeout=1)
                 except Empty:
-                    self._flush_scrobble(lastfm, pending)
+                    self._flush_scrobble(lastfm, pending, state_store)
                     continue
 
                 buffer.append(chunk)
-                self._flush_scrobble(lastfm, pending)
+                self._flush_scrobble(lastfm, pending, state_store)
                 if not self._is_audio_active(chunk):
-                    if last_audio_at and datetime.utcnow() - last_audio_at > timedelta(
+                    if last_audio_at and datetime.now(timezone.utc) - last_audio_at > timedelta(
                         seconds=self.silence_tolerance_seconds
                     ):
                         audio_active = False
+                        if pending and not pending.scrobbled:
+                            state_store.write(
+                                DisplayState.from_track(
+                                    pending.track,
+                                    pending.started_at,
+                                    audio_active=False,
+                                    status="paused",
+                                )
+                            )
+                        else:
+                            state_store.write(DisplayState.listening())
                     continue
 
                 last_audio_at = chunk.recorded_at
@@ -85,7 +99,7 @@ class CoreService:
                     continue
 
                 recognition = recognizer.recognize_samples(clip, settings.audio_sample_rate)
-                last_recognition_at = datetime.utcnow()
+                last_recognition_at = datetime.now(timezone.utc)
                 if recognition is None or not recognition.title or not recognition.artist:
                     continue
 
@@ -105,18 +119,38 @@ class CoreService:
                     continue
 
                 pending = build_pending_scrobble(validated, started_at)
+                state_store.write(
+                    DisplayState.from_track(
+                        validated,
+                        started_at,
+                        audio_active=True,
+                    )
+                )
                 if not pending.now_playing_sent:
                     lastfm.update_now_playing(validated)
                     pending.now_playing_sent = True
-                self._flush_scrobble(lastfm, pending)
+                self._flush_scrobble(lastfm, pending, state_store)
 
-    def _flush_scrobble(self, lastfm: LastFMClient, pending: PendingScrobble | None) -> None:
+    def _flush_scrobble(
+        self,
+        lastfm: LastFMClient,
+        pending: PendingScrobble | None,
+        state_store: StateStore,
+    ) -> None:
         if not pending or pending.scrobbled:
             return
-        if datetime.utcnow() < pending.scrobble_at:
+        if datetime.now(timezone.utc) < pending.scrobble_at:
             return
         lastfm.scrobble(pending.track, pending.started_at)
         pending.scrobbled = True
+        state_store.write(
+            DisplayState.from_track(
+                pending.track,
+                pending.started_at,
+                audio_active=True,
+                status="scrobbled",
+            )
+        )
 
     def _is_audio_active(self, chunk: AudioChunk) -> bool:
         return chunk.rms >= self.silence_threshold

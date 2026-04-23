@@ -60,3 +60,10 @@ Current placeholders cover:
 ## Raspberry Pi
 
 Deployment notes and `systemd` unit templates live in [`docs/raspberry-pi-setup.md`](docs/raspberry-pi-setup.md) and [`deploy/systemd/`](deploy/systemd/).
+
+## TV Display
+
+The lyrics service now exposes a TV-friendly now-playing page and JSON state endpoint:
+
+- `http://<device>:8765/`
+- `http://<device>:8765/api/now-playing`

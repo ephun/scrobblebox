@@ -4,7 +4,7 @@ import logging
 import queue
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import sounddevice as sd
@@ -88,7 +88,7 @@ class AudioCapture:
         mono = np.mean(indata.copy(), axis=1)
         rms = float(np.sqrt(np.mean(np.square(mono))))
         self.block_queue.put(
-            AudioChunk(samples=mono, recorded_at=datetime.utcnow(), rms=rms)
+            AudioChunk(samples=mono, recorded_at=datetime.now(timezone.utc), rms=rms)
         )
 
 
@@ -106,7 +106,7 @@ class RollingAudioBuffer:
 
     def append(self, chunk: AudioChunk) -> None:
         self._chunks.append(chunk)
-        cutoff = datetime.utcnow() - timedelta(seconds=self.max_seconds)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.max_seconds)
         while self._chunks and self._chunks[0].recorded_at < cutoff:
             self._chunks.popleft()
 

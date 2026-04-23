@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass(slots=True)
@@ -10,6 +10,7 @@ class Track:
     artist: str
     album: str
     release_id: int | None = None
+    artwork_url: str | None = None
     side: str | None = None
     position: str | None = None
     duration_seconds: int | None = None
@@ -23,7 +24,7 @@ class RecognitionResult:
     album: str | None = None
     shazam_track_id: str | None = None
     raw: dict | None = None
-    recognized_at: datetime = field(default_factory=datetime.utcnow)
+    recognized_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(slots=True)
