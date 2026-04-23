@@ -9,7 +9,7 @@ import requests
 from rapidfuzz import fuzz
 
 from scrobblebox.config import settings
-from scrobblebox.core.models import RecognitionResult, Track
+from scrobblebox.core.models import RecognitionResult, ReleaseTrack, Track
 
 
 LOGGER = logging.getLogger(__name__)
@@ -141,6 +141,7 @@ class DiscogsClient:
                 side=track_side(entry.get("position")),
                 position=entry.get("position"),
                 duration_seconds=parse_duration_seconds(entry.get("duration")),
+                release_tracks=self._release_tracks(release_detail),
             )
             if best_match is None or total > best_match[0]:
                 best_match = (total, track)
@@ -205,3 +206,22 @@ class DiscogsClient:
             return None
         primary = next((image for image in images if image.get("type") == "primary"), images[0])
         return primary.get("uri150") or primary.get("uri")
+
+    @staticmethod
+    def _release_tracks(release_detail: dict[str, Any]) -> list[ReleaseTrack]:
+        release_artists = [artist.get("name", "") for artist in release_detail.get("artists", [])]
+        tracks: list[ReleaseTrack] = []
+        for entry in release_detail.get("tracklist", []):
+            if entry.get("type_") and entry["type_"] != "track":
+                continue
+            entry_artists = [artist.get("name", "") for artist in entry.get("artists", [])] or release_artists
+            tracks.append(
+                ReleaseTrack(
+                    title=str(entry.get("title", "")),
+                    artist=", ".join(entry_artists) if entry_artists else "",
+                    position=entry.get("position"),
+                    side=track_side(entry.get("position")),
+                    duration_seconds=parse_duration_seconds(entry.get("duration")),
+                )
+            )
+        return tracks

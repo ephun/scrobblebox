@@ -7,6 +7,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from scrobblebox.config import settings
+from scrobblebox.lyrics.display import LyricRepository, build_view_model
 from scrobblebox.lyrics.state import StateStore
 
 
@@ -142,6 +143,7 @@ HTML = """<!doctype html>
       padding: 24px;
       font-size: clamp(22px, 2.5vw, 40px);
       line-height: 1.15;
+      transition: transform 240ms ease, background 240ms ease, opacity 240ms ease;
     }
     .card.current {
       background: linear-gradient(135deg, rgba(255,209,102,0.16), rgba(100,223,223,0.12));
@@ -226,10 +228,15 @@ HTML = """<!doctype html>
       const s = state || {status: 'listening', message: 'Listening...', audio_active: false};
       const playing = !!s.title;
       const elapsed = playing ? elapsedSeconds(s.started_at) : 0;
-      const duration = s.duration_seconds || 0;
+      const duration = s.display_duration_seconds || s.duration_seconds || 0;
       const percent = duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0;
 
-      els.chip.textContent = s.audio_active ? (s.status === 'scrobbled' ? 'Confirmed' : 'Now Playing') : 'Listening';
+      const chipLabel = s.audio_active ? (
+        s.status === 'inferred' ? 'Inferred' :
+        s.status === 'scrobbled' ? 'Confirmed' :
+        'Now Playing'
+      ) : 'Listening';
+      els.chip.textContent = chipLabel;
       els.title.textContent = playing ? s.title : (s.message || 'Listening...');
       els.artist.textContent = playing ? s.artist : 'ScrobbleBox';
       els.album.textContent = playing ? (s.album || 'Unknown album') : 'Waiting for verified playback';
@@ -240,9 +247,9 @@ HTML = """<!doctype html>
       els.duration.textContent = duration ? fmt(duration) : '0:00';
       els.position.textContent = s.position ? `${s.position}${s.side ? ' • Side ' + s.side : ''}` : 'No side';
       els.updated.textContent = s.updated_at ? new Date(s.updated_at).toLocaleTimeString() : 'No signal';
-      els.prev.textContent = playing ? 'Previous lyric unavailable.' : 'Listening...';
-      els.current.textContent = playing ? 'No lyrics available.' : 'Listening...';
-      els.next.textContent = playing ? 'Lyric sync not implemented yet.' : 'Waiting for lyric sync.';
+      els.prev.textContent = s.previous_lyric || '';
+      els.current.textContent = s.current_lyric || (playing ? 'No lyrics available.' : 'Listening...');
+      els.next.textContent = s.next_lyric || '';
     }
 
     async function refresh() {
@@ -266,17 +273,26 @@ HTML = """<!doctype html>
 """
 
 
-def build_handler(state_store: StateStore) -> type[BaseHTTPRequestHandler]:
+def build_handler(state_store: StateStore, repo: LyricRepository) -> type[BaseHTTPRequestHandler]:
     class LyricsHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             if self.path in {"/", "/index.html"}:
                 self._send(HTTPStatus.OK, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 return
             if self.path == "/api/now-playing":
-                payload = json.dumps(state_store.read()).encode("utf-8")
+                payload = json.dumps(build_view_model(state_store.read(), repo)).encode("utf-8")
                 self._send(HTTPStatus.OK, payload, "application/json; charset=utf-8")
                 return
             self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain; charset=utf-8")
+
+        def do_HEAD(self) -> None:  # noqa: N802
+            if self.path in {"/", "/index.html", "/api/now-playing"}:
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            self.send_response(HTTPStatus.NOT_FOUND)
+            self.end_headers()
 
         def log_message(self, fmt: str, *args) -> None:
             LOGGER.info("lyrics http: " + fmt, *args)
@@ -301,7 +317,10 @@ class LyricsService:
 
     def run(self) -> None:
         LOGGER.info("Starting ScrobbleBox Lyrics on %s:%s", self.host, self.port)
-        server = ThreadingHTTPServer((self.host, self.port), build_handler(StateStore()))
+        server = ThreadingHTTPServer(
+            (self.host, self.port),
+            build_handler(StateStore(), LyricRepository()),
+        )
         try:
             server.serve_forever()
         except KeyboardInterrupt:

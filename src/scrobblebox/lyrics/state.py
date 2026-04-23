@@ -27,6 +27,7 @@ class DisplayState:
     release_id: int | None = None
     side: str | None = None
     position: str | None = None
+    release_tracks: list[dict] | None = None
     message: str = ""
 
     @classmethod
@@ -60,6 +61,16 @@ class DisplayState:
             release_id=track.release_id,
             side=track.side,
             position=track.position,
+            release_tracks=[
+                {
+                    "title": item.title,
+                    "artist": item.artist,
+                    "position": item.position,
+                    "side": item.side,
+                    "duration_seconds": item.duration_seconds,
+                }
+                for item in track.release_tracks
+            ],
         )
 
 

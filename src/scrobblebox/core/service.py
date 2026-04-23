@@ -115,6 +115,19 @@ class CoreService:
 
                 started_at = recognition.recognized_at - timedelta(seconds=recognition.offset_seconds)
                 if pending and same_track(pending.track, validated):
+                    if started_at < pending.started_at:
+                        pending.started_at = started_at
+                        pending.scrobble_at = build_pending_scrobble(
+                            pending.track,
+                            pending.started_at,
+                        ).scrobble_at
+                        state_store.write(
+                            DisplayState.from_track(
+                                pending.track,
+                                pending.started_at,
+                                audio_active=True,
+                            )
+                        )
                     LOGGER.info("Ignoring duplicate recognition for %s - %s", validated.artist, validated.title)
                     continue
 

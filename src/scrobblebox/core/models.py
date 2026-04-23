@@ -5,6 +5,15 @@ from datetime import datetime, timezone
 
 
 @dataclass(slots=True)
+class ReleaseTrack:
+    title: str
+    artist: str
+    position: str | None = None
+    side: str | None = None
+    duration_seconds: int | None = None
+
+
+@dataclass(slots=True)
 class Track:
     title: str
     artist: str
@@ -14,6 +23,7 @@ class Track:
     side: str | None = None
     position: str | None = None
     duration_seconds: int | None = None
+    release_tracks: list[ReleaseTrack] = field(default_factory=list)
 
 
 @dataclass(slots=True)
