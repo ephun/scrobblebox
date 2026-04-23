@@ -52,7 +52,7 @@ class CoreService:
 
         audio_active = False
         last_audio_at: datetime | None = None
-        last_recognition_at = datetime.min
+        last_recognition_at = datetime.min.replace(tzinfo=timezone.utc)
         pending: PendingScrobble | None = None
         state_store.write(DisplayState.listening())
 
