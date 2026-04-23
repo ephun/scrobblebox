@@ -80,6 +80,9 @@ class DiscogsClient:
                 title=recognition.title,
                 artist=recognition.artist,
                 album=recognition.album or "",
+                lyric_title=recognition.title,
+                lyric_artist=recognition.artist,
+                lyric_album=recognition.album or "",
             )
 
         candidates = self._candidate_releases(recognition)
@@ -136,6 +139,9 @@ class DiscogsClient:
                 title=entry_title,
                 artist=", ".join(entry_artists) if entry_artists else recognition.artist,
                 album=release_title,
+                lyric_title=recognition.title,
+                lyric_artist=recognition.artist,
+                lyric_album=recognition.album or release_title,
                 release_id=int(release_detail["id"]),
                 artwork_url=self._artwork_url(release_detail),
                 side=track_side(entry.get("position")),

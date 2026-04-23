@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,6 +39,24 @@ def slugify(value: str) -> str:
     value = value.casefold().strip()
     value = re.sub(r"[^a-z0-9]+", "-", value)
     return value.strip("-")
+
+
+def ascii_fold(value: str) -> str:
+    return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").strip()
+
+
+def query_variants(value: str) -> list[str]:
+    candidates = [value.strip()]
+    ascii_value = ascii_fold(value)
+    if ascii_value and ascii_value not in candidates:
+        candidates.append(ascii_value)
+    no_parens = re.sub(r"\([^)]*\)", " ", value).strip()
+    if no_parens and no_parens not in candidates:
+        candidates.append(no_parens)
+    ascii_no_parens = ascii_fold(no_parens)
+    if ascii_no_parens and ascii_no_parens not in candidates:
+        candidates.append(ascii_no_parens)
+    return [candidate for candidate in candidates if candidate]
 
 
 class LyricRepository:
@@ -110,41 +129,45 @@ class LyricRepository:
         return LyricsDocument(lines=lines, instrumental=instrumental)
 
     def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
-        title = state.get("title", "")
-        artist = state.get("artist", "")
-        if not title or not artist:
+        titles = query_variants(str(state.get("lyric_title") or state.get("title") or ""))
+        artists = query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
+        albums = query_variants(str(state.get("lyric_album") or state.get("album") or ""))
+        if not titles or not artists:
             return None
-        params = {
-            "track_name": title,
-            "artist_name": artist,
-        }
-        album = state.get("album")
-        if album:
-            params["album_name"] = album
         duration = state.get("duration_seconds")
-        if duration:
-            params["duration"] = duration
+        for title in titles:
+            for artist in artists:
+                for album in albums or [""]:
+                    params = {
+                        "track_name": title,
+                        "artist_name": artist,
+                    }
+                    if album:
+                        params["album_name"] = album
+                    if duration:
+                        params["duration"] = duration
 
-        response = self.session.get("https://lrclib.net/api/search", params=params, timeout=20)
-        response.raise_for_status()
-        results = response.json()
-        if not results:
-            return None
+                    response = self.session.get("https://lrclib.net/api/search", params=params, timeout=20)
+                    response.raise_for_status()
+                    results = response.json()
+                    if not results:
+                        continue
 
-        best = results[0]
-        document = self._document_from_result(best)
-        target = next((path for path in candidates if path.suffix.lower() == ".json"), None)
-        if target is not None:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "instrumental": bool(best.get("instrumental", False)),
-                "lines": [
-                    {"time_seconds": line.time_seconds, "text": line.text}
-                    for line in document.lines
-                ],
-            }
-            target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        return document
+                    best = results[0]
+                    document = self._document_from_result(best)
+                    target = next((path for path in candidates if path.suffix.lower() == ".json"), None)
+                    if target is not None:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        payload = {
+                            "instrumental": bool(best.get("instrumental", False)),
+                            "lines": [
+                                {"time_seconds": line.time_seconds, "text": line.text}
+                                for line in document.lines
+                            ],
+                        }
+                        target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+                    return document
+        return None
 
     def _document_from_result(self, result: dict[str, Any]) -> LyricsDocument:
         synced = result.get("syncedLyrics")

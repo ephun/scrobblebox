@@ -21,6 +21,9 @@ class DisplayState:
     title: str = ""
     artist: str = ""
     album: str = ""
+    lyric_title: str = ""
+    lyric_artist: str = ""
+    lyric_album: str = ""
     artwork_url: str = ""
     duration_seconds: int | None = None
     started_at: str | None = None
@@ -55,6 +58,9 @@ class DisplayState:
             title=track.title,
             artist=track.artist,
             album=track.album,
+            lyric_title=track.lyric_title or track.title,
+            lyric_artist=track.lyric_artist or track.artist,
+            lyric_album=track.lyric_album or track.album,
             artwork_url=track.artwork_url or "",
             duration_seconds=track.duration_seconds,
             started_at=started_at.astimezone(timezone.utc).isoformat(),

@@ -18,6 +18,9 @@ class Track:
     title: str
     artist: str
     album: str
+    lyric_title: str | None = None
+    lyric_artist: str | None = None
+    lyric_album: str | None = None
     release_id: int | None = None
     artwork_url: str | None = None
     side: str | None = None
