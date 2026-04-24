@@ -195,12 +195,13 @@ HTML = """<!doctype html>
       font-size: clamp(50px, 4.2vw, 70px);
       line-height: 1.14;
       font-weight: 650;
+      overflow-wrap: anywhere;
+      word-break: normal;
+      overflow: hidden;
     }
     .card.current {
       background: linear-gradient(135deg, rgba(30,215,96,0.18), rgba(154,240,183,0.1));
       border-color: rgba(30,215,96,0.36);
-      transform: scale(1.01);
-      font-size: clamp(68px, 6vw, 108px);
       font-weight: 800;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
     }
@@ -226,7 +227,6 @@ HTML = """<!doctype html>
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
       .card { font-size: clamp(34px, 5.4vw, 52px); }
-      .card.current { font-size: clamp(44px, 7vw, 68px); }
       .times, .statusline, .chip, .eyebrow { font-size: 22px; }
     }
   </style>
@@ -274,6 +274,7 @@ HTML = """<!doctype html>
     };
     let state = null;
     let renderedLyrics = { prev: '', current: '', next: '' };
+    let renderedMeta = { title: '', artist: '', album: '' };
 
     function fmt(totalSeconds) {
       if (!totalSeconds || totalSeconds < 0) return '0:00';
@@ -343,22 +344,30 @@ HTML = """<!doctype html>
       const elapsed = playing ? elapsedSeconds(s.started_at) : 0;
       const duration = s.display_duration_seconds || s.duration_seconds || 0;
       const percent = duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0;
+      const titleText = playing ? s.title : (s.message || 'Listening...');
+      const artistText = playing ? s.artist : 'ScrobbleBox';
+      const albumText = playing ? (s.album || 'Unknown album') : 'Waiting for verified playback';
 
-      const chipLabel = s.audio_active ? (
-        s.status === 'inferred' ? 'Inferred' :
-        s.status === 'scrobbled' ? 'Confirmed' :
-        'Now Playing'
-      ) : 'Listening';
+      const chipLabel = s.audio_active ? 'Now Playing' : 'Listening';
       els.chip.textContent = chipLabel;
-      setTicker(els.title, playing ? s.title : (s.message || 'Listening...'));
-      setTicker(els.artist, playing ? s.artist : 'ScrobbleBox');
-      setTicker(els.album, playing ? (s.album || 'Unknown album') : 'Waiting for verified playback');
+      if (renderedMeta.title !== titleText) {
+        setTicker(els.title, titleText);
+        renderedMeta.title = titleText;
+      }
+      if (renderedMeta.artist !== artistText) {
+        setTicker(els.artist, artistText);
+        renderedMeta.artist = artistText;
+      }
+      if (renderedMeta.album !== albumText) {
+        setTicker(els.album, albumText);
+        renderedMeta.album = albumText;
+      }
       els.cover.src = s.artwork_url || '';
       els.cover.style.visibility = s.artwork_url ? 'visible' : 'hidden';
       els.progress.style.width = `${percent}%`;
       els.elapsed.textContent = fmt(elapsed);
       els.duration.textContent = duration ? fmt(duration) : '0:00';
-      els.position.textContent = s.position ? `${s.position}${s.side ? ' • Side ' + s.side : ''}` : 'No side';
+      els.position.textContent = s.position ? `${s.position}${s.side ? ' | Side ' + s.side : ''}` : 'No side';
       els.updated.textContent = s.updated_at ? new Date(s.updated_at).toLocaleTimeString() : 'No signal';
       animateLyrics(
         s.previous_lyric || '',
