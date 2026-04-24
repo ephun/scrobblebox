@@ -166,7 +166,6 @@ HTML = """<!doctype html>
       width: 0%;
       background: linear-gradient(90deg, var(--accent), var(--accent-2));
       box-shadow: 0 0 18px rgba(30,215,96,0.45);
-      transition: width 0.6s linear;
     }
     .times {
       display: flex;
@@ -196,7 +195,6 @@ HTML = """<!doctype html>
       font-size: clamp(50px, 4.2vw, 70px);
       line-height: 1.14;
       font-weight: 650;
-      transition: transform 260ms ease, background 260ms ease, opacity 260ms ease, border-color 260ms ease;
     }
     .card.current {
       background: linear-gradient(135deg, rgba(30,215,96,0.18), rgba(154,240,183,0.1));
@@ -209,19 +207,6 @@ HTML = """<!doctype html>
     .message {
       color: var(--muted);
       background: rgba(255,255,255,0.03);
-    }
-    .card.animate {
-      animation: lyricPush 320ms cubic-bezier(0.2, 0.9, 0.2, 1);
-    }
-    @keyframes lyricPush {
-      0% {
-        opacity: 0.35;
-        transform: translateY(24px);
-      }
-      100% {
-        opacity: 1;
-        transform: translateY(0);
-      }
     }
     .statusline {
       display: flex;
