@@ -211,7 +211,7 @@ class DiscogsClient:
         if not images:
             return None
         primary = next((image for image in images if image.get("type") == "primary"), images[0])
-        return primary.get("uri150") or primary.get("uri")
+        return primary.get("uri") or primary.get("resource_url") or primary.get("uri150")
 
     @staticmethod
     def _release_tracks(release_detail: dict[str, Any]) -> list[ReleaseTrack]:

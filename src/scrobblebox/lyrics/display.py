@@ -62,6 +62,7 @@ def query_variants(value: str) -> list[str]:
 DEFAULT_TRACK_SECONDS = 210
 LYRIC_END_GRACE_SECONDS = 8
 MIN_TRACK_SECONDS = 90
+LYRIC_SWITCH_EARLY_SECONDS = 0.6
 
 
 class LyricRepository:
@@ -287,12 +288,18 @@ def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track
     if not lyrics.lines:
         return ("", "No lyrics available.", "")
 
+    adjusted_elapsed = max(0.0, elapsed_seconds + LYRIC_SWITCH_EARLY_SECONDS)
     index = 0
     for i, line in enumerate(lyrics.lines):
-        if line.time_seconds <= elapsed_seconds:
+        next_line = lyrics.lines[i + 1] if i + 1 < len(lyrics.lines) else None
+        if next_line is None:
             index = i
-        else:
             break
+        handoff = line.time_seconds + ((next_line.time_seconds - line.time_seconds) / 2)
+        if adjusted_elapsed < handoff:
+            index = i
+            break
+        index = i + 1
     prev_text = lyrics.lines[index - 1].text if index > 0 else ""
     current_text = lyrics.lines[index].text or "..."
     next_text = lyrics.lines[index + 1].text if index + 1 < len(lyrics.lines) else ""

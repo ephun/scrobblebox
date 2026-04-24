@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from scrobblebox.config import settings
-from scrobblebox.lyrics.display import LyricRepository, build_view_model
+from scrobblebox.lyrics.display import LyricRepository, build_view_model, parse_iso_utc
 from scrobblebox.lyrics.state import StateStore
 
 
@@ -42,7 +43,7 @@ HTML = """<!doctype html>
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      font-family: "Aptos", "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       color: var(--text);
       background:
         radial-gradient(circle at top left, rgba(121, 242, 192, 0.16), transparent 30%),
@@ -101,31 +102,23 @@ HTML = """<!doctype html>
       font-size: 12px;
       font-weight: 700;
     }
-    .marquee {
-      overflow: hidden;
-      white-space: nowrap;
-      position: relative;
-    }
-    .marquee > span {
-      display: inline-block;
-      padding-right: 2rem;
-      min-width: 100%;
-      animation: marquee 18s linear infinite;
-    }
     .title {
       font-size: clamp(46px, 5.6vw, 86px);
       line-height: 0.92;
       font-weight: 800;
       letter-spacing: -0.03em;
+      text-wrap: balance;
     }
     .artist {
       color: var(--text);
       font-size: clamp(22px, 2.2vw, 34px);
       font-weight: 700;
+      text-wrap: balance;
     }
     .meta {
       color: var(--muted);
       font-size: clamp(18px, 1.8vw, 26px);
+      text-wrap: balance;
     }
     .bar {
       position: relative;
@@ -189,10 +182,6 @@ HTML = """<!doctype html>
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
-    @keyframes marquee {
-      0%, 12% { transform: translateX(0); }
-      88%, 100% { transform: translateX(-100%); }
-    }
     @media (max-width: 900px) {
       .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
       body { overflow: auto; }
@@ -206,9 +195,9 @@ HTML = """<!doctype html>
       <div class="chip" id="chip">Listening</div>
       <img class="cover" id="cover" alt="Album art">
       <div class="eyebrow">Now Spinning</div>
-      <div class="marquee title"><span id="title">Listening...</span></div>
-      <div class="marquee artist"><span id="artist">ScrobbleBox</span></div>
-      <div class="marquee meta"><span id="album">Waiting for verified playback</span></div>
+      <div class="title" id="title">Listening...</div>
+      <div class="artist" id="artist">ScrobbleBox</div>
+      <div class="meta" id="album">Waiting for verified playback</div>
       <div class="bar"><div id="progress"></div></div>
       <div class="times">
         <span id="elapsed">0:00</span>
@@ -304,14 +293,79 @@ HTML = """<!doctype html>
 """
 
 
+def track_index(state: dict) -> int | None:
+    release_tracks = list(state.get("release_tracks") or [])
+    position = state.get("position")
+    if not position or not release_tracks:
+        return None
+    for index, item in enumerate(release_tracks):
+        if item.get("position") == position:
+            return index
+    return None
+
+
+def same_release_side(left: dict, right: dict) -> bool:
+    return (
+        bool(left.get("release_id"))
+        and left.get("release_id") == right.get("release_id")
+        and left.get("side") == right.get("side")
+    )
+
+
+def same_track(left: dict, right: dict) -> bool:
+    return (
+        same_release_side(left, right)
+        and left.get("position") == right.get("position")
+        and left.get("title") == right.get("title")
+    )
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def forward_only(previous: dict | None, current: dict) -> dict:
+    if not previous or not previous.get("title"):
+        return current
+    if not current.get("title"):
+        return current
+
+    prev_index = track_index(previous)
+    curr_index = track_index(current)
+    if same_release_side(previous, current) and prev_index is not None and curr_index is not None:
+        if curr_index < prev_index:
+            return previous
+        if curr_index == prev_index:
+            prev_started = parse_iso_utc(previous.get("started_at"))
+            curr_started = parse_iso_utc(current.get("started_at"))
+            if prev_started and curr_started and curr_started > prev_started:
+                current = dict(current)
+                current["started_at"] = prev_started.isoformat()
+                elapsed = max(0, int((utc_now() - prev_started).total_seconds()))
+                current["elapsed_seconds"] = max(elapsed, int(previous.get("elapsed_seconds") or 0))
+                if previous.get("previous_lyric"):
+                    current["previous_lyric"] = previous["previous_lyric"]
+                if previous.get("current_lyric") and current.get("current_lyric") in {"Listening...", "", "..."}:
+                    current["current_lyric"] = previous["current_lyric"]
+                if previous.get("next_lyric") and not current.get("next_lyric"):
+                    current["next_lyric"] = previous["next_lyric"]
+    return current
+
+
 def build_handler(state_store: StateStore, repo: LyricRepository) -> type[BaseHTTPRequestHandler]:
+    last_view: dict | None = None
+
     class LyricsHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
+            nonlocal last_view
             if self.path in {"/", "/index.html"}:
                 self._send(HTTPStatus.OK, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 return
             if self.path == "/api/now-playing":
-                payload = json.dumps(build_view_model(state_store.read(), repo)).encode("utf-8")
+                model = build_view_model(state_store.read(), repo)
+                model = forward_only(last_view, model)
+                last_view = model
+                payload = json.dumps(model).encode("utf-8")
                 self._send(HTTPStatus.OK, payload, "application/json; charset=utf-8")
                 return
             self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain; charset=utf-8")
