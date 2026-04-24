@@ -49,7 +49,7 @@ Current placeholders cover:
 - Discogs token and collection identifiers
 - Shazam / audio capture configuration
 - Lyrics server settings
-- Kasa oscilloscope plug settings
+- Kasa oscilloscope plug settings, including optional TP-Link credentials for newer devices
 
 ## Development Notes
 

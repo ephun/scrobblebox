@@ -46,7 +46,10 @@ class Settings(BaseSettings):
     lyrics_directory: Path = Field(default=Path("lyrics"), alias="LYRICS_DIRECTORY")
 
     kasa_device_alias: str = Field(default="Oscilloscope", alias="KASA_DEVICE_ALIAS")
+    kasa_username: str = Field(default="", alias="KASA_USERNAME")
+    kasa_password: str = Field(default="", alias="KASA_PASSWORD")
     oscilloscope_idle_minutes: int = Field(default=15, alias="OSCILLOSCOPE_IDLE_MINUTES")
+    oscilloscope_poll_seconds: int = Field(default=5, alias="OSCILLOSCOPE_POLL_SECONDS")
 
 
 settings = Settings()
