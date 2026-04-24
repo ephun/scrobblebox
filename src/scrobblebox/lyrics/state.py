@@ -32,7 +32,7 @@ class DisplayState:
     position: str | None = None
     release_tracks: list[dict] | None = None
     timing_started_at_samples: list[str] = field(default_factory=list)
-    offset_seconds_samples: list[int] = field(default_factory=list)
+    offset_seconds_samples: list[float] = field(default_factory=list)
     message: str = ""
 
     @classmethod
@@ -53,7 +53,7 @@ class DisplayState:
         audio_active: bool,
         status: str = "playing",
         timing_started_at_samples: list[datetime] | None = None,
-        offset_seconds_samples: list[int] | None = None,
+        offset_seconds_samples: list[float] | None = None,
     ) -> "DisplayState":
         return cls(
             status=status,

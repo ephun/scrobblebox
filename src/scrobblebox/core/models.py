@@ -33,7 +33,7 @@ class Track:
 class RecognitionResult:
     title: str
     artist: str
-    offset_seconds: int
+    offset_seconds: float
     album: str | None = None
     shazam_track_id: str | None = None
     raw: dict | None = None
@@ -53,6 +53,6 @@ class PendingScrobble:
     started_at: datetime
     scrobble_at: datetime
     timing_started_at_samples: list[datetime] = field(default_factory=list)
-    offset_seconds_samples: list[int] = field(default_factory=list)
+    offset_seconds_samples: list[float] = field(default_factory=list)
     now_playing_sent: bool = False
     scrobbled: bool = False

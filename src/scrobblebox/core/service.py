@@ -34,7 +34,7 @@ class CoreService:
     recognition_cooldown_seconds: int = settings.recognition_cooldown_seconds
 
     @staticmethod
-    def _append_timing_sample(pending: PendingScrobble, started_at: datetime, offset_seconds: int) -> None:
+    def _append_timing_sample(pending: PendingScrobble, started_at: datetime, offset_seconds: float) -> None:
         pending.timing_started_at_samples.append(started_at)
         pending.offset_seconds_samples.append(offset_seconds)
         if len(pending.timing_started_at_samples) > MAX_TIMING_SAMPLES:
@@ -46,7 +46,7 @@ class CoreService:
     def _started_at_from_clip_and_response(
         clip_started_at: datetime,
         recognition_returned_at: datetime,
-        offset_seconds: int,
+        offset_seconds: float,
     ) -> datetime:
         elapsed_since_clip_start = max(
             0.0,

@@ -60,10 +60,10 @@ class ShazamRecognizer:
             LOGGER.info("Shazam did not recognize the latest clip")
             return None
 
-        offset_seconds = 0
+        offset_seconds = 0.0
         match = payload.get("matches", [{}])[0]
         if isinstance(match, dict):
-            offset_seconds = int(float(match.get("offset", 0) or 0))
+            offset_seconds = float(match.get("offset", 0) or 0)
 
         return RecognitionResult(
             title=str(track.get("title", "")),
