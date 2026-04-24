@@ -91,21 +91,21 @@ HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 18px 28px;
+      padding: 21px 32px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       font-variant-caps: all-small-caps;
       letter-spacing: 0.12em;
-      font-size: 30px;
+      font-size: 34px;
       font-weight: 800;
       width: fit-content;
     }
     .chip.alt {
-      background: rgba(140, 24, 36, 0.28);
-      border: 1px solid rgba(255, 99, 124, 0.18);
-      color: #ffd8de;
+      background: rgba(140, 24, 36, 0.22);
+      border: 1px solid rgba(255, 78, 108, 0.3);
+      color: #ff637d;
       letter-spacing: 0.1em;
     }
     .lastfm-logo {
@@ -257,7 +257,7 @@ HTML = """<!doctype html>
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
       .card { font-size: clamp(40px, 5.8vw, 58px); }
-      .times, .statusline, .chip { font-size: 24px; }
+      .times, .statusline, .chip { font-size: 26px; }
     }
   </style>
 </head>
