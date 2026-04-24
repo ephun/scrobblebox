@@ -64,8 +64,8 @@ HTML = """<!doctype html>
       display: grid;
       grid-template-columns: minmax(420px, 35vw) 1fr;
       min-height: 100vh;
-      gap: 30px;
-      padding: 30px;
+      gap: 34px;
+      padding: 34px;
     }
     .panel {
       position: relative;
@@ -76,22 +76,22 @@ HTML = """<!doctype html>
       backdrop-filter: blur(26px);
     }
     .info {
-      padding: 30px;
+      padding: 34px;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 28px;
     }
     .chip {
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 11px 18px;
+      padding: 14px 22px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 0.18em;
-      font-size: 14px;
+      font-size: 22px;
       font-weight: 800;
       width: fit-content;
     }
@@ -108,12 +108,12 @@ HTML = """<!doctype html>
     .eyebrow {
       color: var(--muted);
       text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: 12px;
+      letter-spacing: 0.16em;
+      font-size: 22px;
       font-weight: 700;
     }
     .title {
-      font-size: clamp(68px, 6.8vw, 112px);
+      font-size: clamp(82px, 7.4vw, 128px);
       line-height: 0.94;
       font-weight: 800;
       letter-spacing: -0.035em;
@@ -121,12 +121,12 @@ HTML = """<!doctype html>
     }
     .artist {
       color: var(--text);
-      font-size: clamp(36px, 3vw, 52px);
+      font-size: clamp(46px, 3.5vw, 62px);
       font-weight: 750;
     }
     .meta {
       color: var(--muted);
-      font-size: clamp(28px, 2.4vw, 38px);
+      font-size: clamp(36px, 2.9vw, 48px);
       font-weight: 600;
     }
     .ticker {
@@ -156,7 +156,7 @@ HTML = """<!doctype html>
     }
     .bar {
       position: relative;
-      height: 16px;
+      height: 20px;
       border-radius: 999px;
       background: rgba(255,255,255,0.08);
       overflow: hidden;
@@ -172,15 +172,15 @@ HTML = """<!doctype html>
       display: flex;
       justify-content: space-between;
       color: var(--muted);
-      font-size: 28px;
+      font-size: 34px;
       font-weight: 700;
       letter-spacing: 0.04em;
     }
     .lyrics {
-      padding: 30px;
+      padding: 34px;
       display: grid;
       grid-template-rows: 0.8fr 1.05fr 0.8fr;
-      gap: 22px;
+      gap: 26px;
       min-height: 0;
       background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.03));
     }
@@ -192,9 +192,9 @@ HTML = """<!doctype html>
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 30px 42px;
-      font-size: clamp(40px, 3.6vw, 58px);
-      line-height: 1.2;
+      padding: 34px 48px;
+      font-size: clamp(50px, 4.2vw, 70px);
+      line-height: 1.14;
       font-weight: 650;
       transition: transform 260ms ease, background 260ms ease, opacity 260ms ease, border-color 260ms ease;
     }
@@ -202,7 +202,7 @@ HTML = """<!doctype html>
       background: linear-gradient(135deg, rgba(30,215,96,0.18), rgba(154,240,183,0.1));
       border-color: rgba(30,215,96,0.36);
       transform: scale(1.01);
-      font-size: clamp(56px, 5.2vw, 92px);
+      font-size: clamp(68px, 6vw, 108px);
       font-weight: 800;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
     }
@@ -227,7 +227,7 @@ HTML = """<!doctype html>
       display: flex;
       justify-content: space-between;
       color: var(--muted);
-      font-size: 22px;
+      font-size: 30px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -237,6 +237,12 @@ HTML = """<!doctype html>
       .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
       body { overflow: auto; }
       .lyrics { min-height: 55vh; }
+      .title { font-size: clamp(58px, 10vw, 88px); }
+      .artist { font-size: clamp(34px, 6vw, 48px); }
+      .meta { font-size: clamp(28px, 4.5vw, 40px); }
+      .card { font-size: clamp(34px, 5.4vw, 52px); }
+      .card.current { font-size: clamp(44px, 7vw, 68px); }
+      .times, .statusline, .chip, .eyebrow { font-size: 22px; }
     }
   </style>
 </head>
