@@ -107,18 +107,34 @@ HTML = """<!doctype html>
       line-height: 0.92;
       font-weight: 800;
       letter-spacing: -0.03em;
-      text-wrap: balance;
     }
     .artist {
       color: var(--text);
       font-size: clamp(22px, 2.2vw, 34px);
       font-weight: 700;
-      text-wrap: balance;
     }
     .meta {
       color: var(--muted);
       font-size: clamp(18px, 1.8vw, 26px);
-      text-wrap: balance;
+    }
+    .ticker {
+      overflow: hidden;
+      white-space: nowrap;
+      position: relative;
+    }
+    .ticker > span {
+      display: inline-block;
+      padding-right: 0;
+      min-width: auto;
+    }
+    .ticker.overflow > span {
+      padding-right: 4rem;
+      min-width: 100%;
+      animation: marquee 14s linear infinite;
+    }
+    @keyframes marquee {
+      0%, 12% { transform: translateX(0); }
+      88%, 100% { transform: translateX(-100%); }
     }
     .bar {
       position: relative;
@@ -195,9 +211,9 @@ HTML = """<!doctype html>
       <div class="chip" id="chip">Listening</div>
       <img class="cover" id="cover" alt="Album art">
       <div class="eyebrow">Now Spinning</div>
-      <div class="title" id="title">Listening...</div>
-      <div class="artist" id="artist">ScrobbleBox</div>
-      <div class="meta" id="album">Waiting for verified playback</div>
+      <div class="title ticker" id="title"><span>Listening...</span></div>
+      <div class="artist ticker" id="artist"><span>ScrobbleBox</span></div>
+      <div class="meta ticker" id="album"><span>Waiting for verified playback</span></div>
       <div class="bar"><div id="progress"></div></div>
       <div class="times">
         <span id="elapsed">0:00</span>
@@ -244,6 +260,24 @@ HTML = """<!doctype html>
       return Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000));
     }
 
+    function setTicker(el, text) {
+      const span = el.querySelector('span') || document.createElement('span');
+      span.textContent = text;
+      if (!span.parentElement) el.replaceChildren(span);
+      el.classList.remove('overflow');
+    }
+
+    function updateTickers() {
+      [els.title, els.artist, els.album].forEach((el) => {
+        el.classList.remove('overflow');
+        const span = el.querySelector('span');
+        if (!span) return;
+        if (span.scrollWidth > el.clientWidth + 4) {
+          el.classList.add('overflow');
+        }
+      });
+    }
+
     function render() {
       const s = state || {status: 'listening', message: 'Listening...', audio_active: false};
       const playing = !!s.title;
@@ -257,9 +291,9 @@ HTML = """<!doctype html>
         'Now Playing'
       ) : 'Listening';
       els.chip.textContent = chipLabel;
-      els.title.textContent = playing ? s.title : (s.message || 'Listening...');
-      els.artist.textContent = playing ? s.artist : 'ScrobbleBox';
-      els.album.textContent = playing ? (s.album || 'Unknown album') : 'Waiting for verified playback';
+      setTicker(els.title, playing ? s.title : (s.message || 'Listening...'));
+      setTicker(els.artist, playing ? s.artist : 'ScrobbleBox');
+      setTicker(els.album, playing ? (s.album || 'Unknown album') : 'Waiting for verified playback');
       els.cover.src = s.artwork_url || '';
       els.cover.style.visibility = s.artwork_url ? 'visible' : 'hidden';
       els.progress.style.width = `${percent}%`;
@@ -270,6 +304,7 @@ HTML = """<!doctype html>
       els.prev.textContent = s.previous_lyric || '';
       els.current.textContent = s.current_lyric || (playing ? 'No lyrics available.' : 'Listening...');
       els.next.textContent = s.next_lyric || '';
+      requestAnimationFrame(updateTickers);
     }
 
     async function refresh() {
@@ -349,6 +384,22 @@ def forward_only(previous: dict | None, current: dict) -> dict:
                     current["current_lyric"] = previous["current_lyric"]
                 if previous.get("next_lyric") and not current.get("next_lyric"):
                     current["next_lyric"] = previous["next_lyric"]
+                previous_index = int(previous.get("lyric_index", -1))
+                current_index = int(current.get("lyric_index", -1))
+                if current_index >= 0 and previous_index > current_index:
+                    current["lyric_index"] = previous_index
+                    current["previous_lyric"] = previous.get("previous_lyric", current.get("previous_lyric", ""))
+                    current["current_lyric"] = previous.get("current_lyric", current.get("current_lyric", ""))
+                    current["next_lyric"] = previous.get("next_lyric", current.get("next_lyric", ""))
+    if same_track(previous, current):
+        previous_index = int(previous.get("lyric_index", -1))
+        current_index = int(current.get("lyric_index", -1))
+        if previous_index > current_index:
+            current = dict(current)
+            current["lyric_index"] = previous_index
+            current["previous_lyric"] = previous.get("previous_lyric", current.get("previous_lyric", ""))
+            current["current_lyric"] = previous.get("current_lyric", current.get("current_lyric", ""))
+            current["next_lyric"] = previous.get("next_lyric", current.get("next_lyric", ""))
     return current
 
 
