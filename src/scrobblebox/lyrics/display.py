@@ -62,6 +62,7 @@ def query_variants(value: str) -> list[str]:
 DEFAULT_TRACK_SECONDS = 210
 LYRIC_END_GRACE_SECONDS = 8
 MIN_TRACK_SECONDS = 90
+LYRIC_PLACEHOLDER = "\u266a"
 
 
 class LyricRepository:
@@ -243,6 +244,8 @@ def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], star
     state["side"] = track.get("side")
     state["duration_seconds"] = track.get("duration_seconds")
     state["started_at"] = started_at.isoformat()
+    state["timing_started_at_samples"] = []
+    state["offset_seconds_samples"] = []
     return state
 
 
@@ -311,11 +314,41 @@ def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track
         else:
             break
     if index < 0:
-        next_text = lyrics.lines[0].text or "..."
-        return ("", "...", next_text)
+        next_text = lyrics.lines[0].text or LYRIC_PLACEHOLDER
+        return ("", LYRIC_PLACEHOLDER, next_text)
     prev_text = lyrics.lines[index - 1].text if index > 0 else ""
-    current_text = lyrics.lines[index].text or "..."
+    current_text = lyrics.lines[index].text or LYRIC_PLACEHOLDER
     next_text = lyrics.lines[index + 1].text if index + 1 < len(lyrics.lines) else ""
+    return (prev_text, current_text, next_text)
+
+
+def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:
+    if not has_track:
+        return ("Listening...", "Listening...", "Waiting for lyric sync.")
+    if lyrics is None:
+        return ("", "No lyrics available.", "")
+    if lyrics.instrumental:
+        return (LYRIC_PLACEHOLDER, LYRIC_PLACEHOLDER, LYRIC_PLACEHOLDER)
+    if not lyrics.lines:
+        return ("", "No lyrics available.", "")
+
+    display_lines = lyrics.lines
+    if lyrics.lines[0].time_seconds > 0:
+        display_lines = [LyricLine(0.0, LYRIC_PLACEHOLDER), *lyrics.lines]
+
+    index = -1
+    for i, line in enumerate(display_lines):
+        if line.time_seconds <= elapsed_seconds:
+            index = i
+        else:
+            break
+    if index < 0:
+        next_text = display_lines[0].text or LYRIC_PLACEHOLDER
+        return ("", LYRIC_PLACEHOLDER, next_text)
+
+    prev_text = display_lines[index - 1].text if index > 0 else ""
+    current_text = display_lines[index].text or LYRIC_PLACEHOLDER
+    next_text = display_lines[index + 1].text if index + 1 < len(display_lines) else ""
     return (prev_text, current_text, next_text)
 
 
@@ -327,7 +360,7 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository) -> dict[s
 
     # Never show backward motion: the browser increments locally between polls and the
     # server only moves the track start earlier, never later.
-    prev_text, current_text, next_text = lyric_cards(lyrics, elapsed, bool(inferred.get("title")))
+    prev_text, current_text, next_text = stable_lyric_cards(lyrics, elapsed, bool(inferred.get("title")))
 
     if inferred.get("title"):
         release_tracks = list(inferred.get("release_tracks") or [])
