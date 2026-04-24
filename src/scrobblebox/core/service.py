@@ -42,6 +42,19 @@ class CoreService:
         if len(pending.offset_seconds_samples) > MAX_TIMING_SAMPLES:
             pending.offset_seconds_samples = pending.offset_seconds_samples[-MAX_TIMING_SAMPLES:]
 
+    @staticmethod
+    def _started_at_from_clip_and_response(
+        clip_started_at: datetime,
+        recognition_returned_at: datetime,
+        offset_seconds: int,
+    ) -> datetime:
+        elapsed_since_clip_start = max(
+            0.0,
+            (recognition_returned_at - clip_started_at).total_seconds(),
+        )
+        current_track_position = offset_seconds + elapsed_since_clip_start
+        return recognition_returned_at - timedelta(seconds=current_track_position)
+
     def run(self) -> None:
         LOGGER.info("Starting ScrobbleBox Core")
         LOGGER.info(
@@ -125,7 +138,11 @@ class CoreService:
                 if validated is None:
                     continue
 
-                started_at = clip.started_at - timedelta(seconds=recognition.offset_seconds)
+                started_at = self._started_at_from_clip_and_response(
+                    clip.started_at,
+                    recognition.recognized_at,
+                    recognition.offset_seconds,
+                )
                 if pending and same_track(pending.track, validated):
                     self._append_timing_sample(pending, started_at, recognition.offset_seconds)
                     if started_at < pending.started_at:
