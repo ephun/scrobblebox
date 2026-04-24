@@ -8,7 +8,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from scrobblebox.config import settings
-from scrobblebox.lyrics.display import LyricRepository, build_view_model, parse_iso_utc
+from scrobblebox.lyrics.display import LastfmRepository, LyricRepository, build_view_model, parse_iso_utc
 from scrobblebox.lyrics.state import StateStore
 
 
@@ -81,19 +81,31 @@ HTML = """<!doctype html>
       flex-direction: column;
       gap: 28px;
     }
+    .chip-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
     .chip {
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 14px 22px;
+      padding: 16px 24px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 0.18em;
-      font-size: 22px;
+      font-size: 25px;
       font-weight: 800;
       width: fit-content;
+    }
+    .chip.alt {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      letter-spacing: 0.08em;
+      text-transform: none;
     }
     .cover {
       width: 100%;
@@ -105,19 +117,13 @@ HTML = """<!doctype html>
         repeating-linear-gradient(45deg, rgba(255,255,255,0.03), rgba(255,255,255,0.03) 12px, transparent 12px, transparent 24px);
       border: 1px solid rgba(255,255,255,0.08);
     }
-    .eyebrow {
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      font-size: 22px;
-      font-weight: 700;
-    }
     .title {
       font-size: clamp(82px, 7.4vw, 128px);
-      line-height: 0.94;
+      line-height: 1.02;
       font-weight: 800;
       letter-spacing: -0.035em;
       text-shadow: 0 8px 24px rgba(0,0,0,0.32);
+      padding-bottom: 0.08em;
     }
     .artist {
       color: var(--text);
@@ -192,7 +198,7 @@ HTML = """<!doctype html>
       justify-content: center;
       text-align: center;
       padding: 34px 48px;
-      font-size: clamp(50px, 4.2vw, 70px);
+      font-size: clamp(62px, 4.9vw, 86px);
       line-height: 1.14;
       font-weight: 650;
       overflow-wrap: anywhere;
@@ -226,17 +232,19 @@ HTML = """<!doctype html>
       .title { font-size: clamp(58px, 10vw, 88px); }
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
-      .card { font-size: clamp(34px, 5.4vw, 52px); }
-      .times, .statusline, .chip, .eyebrow { font-size: 22px; }
+      .card { font-size: clamp(42px, 6vw, 62px); }
+      .times, .statusline, .chip { font-size: 22px; }
     }
   </style>
 </head>
 <body>
   <div class="shell">
     <section class="panel info">
-      <div class="chip" id="chip">Listening</div>
       <img class="cover" id="cover" alt="Album art">
-      <div class="eyebrow">Now Spinning</div>
+      <div class="chip-row">
+        <div class="chip" id="chip">Listening</div>
+        <div class="chip alt" id="lastfm-chip">Last.fm --</div>
+      </div>
       <div class="title ticker" id="title"><span class="ticker-track"><span class="ticker-primary">Listening...</span><span class="ticker-copy">Listening...</span></span></div>
       <div class="artist ticker" id="artist"><span class="ticker-track"><span class="ticker-primary">ScrobbleBox</span><span class="ticker-copy">ScrobbleBox</span></span></div>
       <div class="meta ticker" id="album"><span class="ticker-track"><span class="ticker-primary">Waiting for verified playback</span><span class="ticker-copy">Waiting for verified playback</span></span></div>
@@ -259,6 +267,7 @@ HTML = """<!doctype html>
   <script>
     const els = {
       chip: document.getElementById('chip'),
+      lastfmChip: document.getElementById('lastfm-chip'),
       cover: document.getElementById('cover'),
       title: document.getElementById('title'),
       artist: document.getElementById('artist'),
@@ -350,6 +359,14 @@ HTML = """<!doctype html>
 
       const chipLabel = s.audio_active ? 'Now Playing' : 'Listening';
       els.chip.textContent = chipLabel;
+      if (typeof s.lastfm_playcount === 'number') {
+        const plays = s.lastfm_playcount === 1 ? '1 play' : `${s.lastfm_playcount} plays`;
+        els.lastfmChip.textContent = `Last.fm ${plays}`;
+        els.lastfmChip.style.display = 'inline-flex';
+      } else {
+        els.lastfmChip.textContent = 'Last.fm --';
+        els.lastfmChip.style.display = playing ? 'inline-flex' : 'none';
+      }
       if (renderedMeta.title !== titleText) {
         setTicker(els.title, titleText);
         renderedMeta.title = titleText;
@@ -433,7 +450,7 @@ def forward_only(previous: dict | None, current: dict) -> dict:
     return current
 
 
-def build_handler(state_store: StateStore, repo: LyricRepository) -> type[BaseHTTPRequestHandler]:
+def build_handler(state_store: StateStore, repo: LyricRepository, lastfm: LastfmRepository) -> type[BaseHTTPRequestHandler]:
     last_view: dict | None = None
 
     class LyricsHandler(BaseHTTPRequestHandler):
@@ -443,7 +460,7 @@ def build_handler(state_store: StateStore, repo: LyricRepository) -> type[BaseHT
                 self._send(HTTPStatus.OK, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 return
             if self.path == "/api/now-playing":
-                model = build_view_model(state_store.read(), repo)
+                model = build_view_model(state_store.read(), repo, lastfm)
                 model = forward_only(last_view, model)
                 last_view = model
                 payload = json.dumps(model).encode("utf-8")
@@ -485,7 +502,7 @@ class LyricsService:
         LOGGER.info("Starting ScrobbleBox Lyrics on %s:%s", self.host, self.port)
         server = ThreadingHTTPServer(
             (self.host, self.port),
-            build_handler(StateStore(), LyricRepository()),
+            build_handler(StateStore(), LyricRepository(), LastfmRepository()),
         )
         try:
             server.serve_forever()

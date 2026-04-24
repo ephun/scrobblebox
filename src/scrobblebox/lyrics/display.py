@@ -25,6 +25,12 @@ class LyricsDocument:
     instrumental: bool = False
 
 
+@dataclass(slots=True)
+class CachedPlaycount:
+    count: int | None
+    expires_at: datetime
+
+
 def parse_iso_utc(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -137,6 +143,47 @@ class LyricRepository:
         lines.sort(key=lambda item: item.time_seconds)
         return LyricsDocument(lines=lines, instrumental=instrumental)
 
+
+class LastfmRepository:
+    def __init__(self) -> None:
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "ScrobbleBox/0.1 (+https://github.com/ephun/scrobblebox)"})
+        self._cache: dict[tuple[str, str], CachedPlaycount] = {}
+
+    def user_playcount(self, state: dict[str, Any]) -> int | None:
+        artist = str(state.get("artist") or "").strip()
+        title = str(state.get("title") or "").strip()
+        if not artist or not title or not settings.lastfm_api_key or not settings.lastfm_username:
+            return None
+
+        key = (artist.casefold(), title.casefold())
+        cached = self._cache.get(key)
+        now = utc_now()
+        if cached and cached.expires_at > now:
+            return cached.count
+
+        params = {
+            "method": "track.getInfo",
+            "api_key": settings.lastfm_api_key,
+            "artist": artist,
+            "track": title,
+            "username": settings.lastfm_username,
+            "autocorrect": 1,
+            "format": "json",
+        }
+        try:
+            response = self.session.get("https://ws.audioscrobbler.com/2.0/", params=params, timeout=20)
+            response.raise_for_status()
+            payload = response.json()
+            track = payload.get("track") or {}
+            raw_count = track.get("userplaycount")
+            count = int(raw_count) if raw_count is not None else 0
+            self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=6))
+            return count
+        except Exception:
+            self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
+            return None
+
     def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
         titles = query_variants(str(state.get("lyric_title") or state.get("title") or ""))
         artists = query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
@@ -246,6 +293,7 @@ def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], star
     state["started_at"] = started_at.isoformat()
     state["timing_started_at_samples"] = []
     state["offset_seconds_samples"] = []
+    state["lastfm_playcount"] = None
     return state
 
 
@@ -349,10 +397,12 @@ def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, ha
     prev_text = display_lines[index - 1].text if index > 0 else ""
     current_text = display_lines[index].text or LYRIC_PLACEHOLDER
     next_text = display_lines[index + 1].text if index + 1 < len(display_lines) else ""
+    prev_text = prev_text or (LYRIC_PLACEHOLDER if index > 0 else "")
+    next_text = next_text or (LYRIC_PLACEHOLDER if index + 1 < len(display_lines) else "")
     return (prev_text, current_text, next_text)
 
 
-def build_view_model(raw_state: dict[str, Any], repo: LyricRepository) -> dict[str, Any]:
+def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: LastfmRepository | None = None) -> dict[str, Any]:
     initial_lyrics = repo.load(raw_state) if raw_state.get("title") else None
     inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
     started_at = averaged_started_at(inferred)
@@ -374,11 +424,12 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository) -> dict[s
                 repo.load(inferred_track_state(inferred, next_track, utc_now()))
 
     inferred["elapsed_seconds"] = elapsed
-    inferred["display_duration_seconds"] = int(inferred.get("duration_seconds") or 0)
+    inferred["display_duration_seconds"] = int(display_duration or 0)
     inferred["started_at"] = started_at.isoformat() if started_at else inferred.get("started_at")
     inferred["previous_lyric"] = prev_text
     inferred["current_lyric"] = current_text
     inferred["next_lyric"] = next_text
+    inferred["lastfm_playcount"] = lastfm.user_playcount(inferred) if lastfm else inferred.get("lastfm_playcount")
     inferred["lyric_index"] = -1
     if lyrics and lyrics.lines and inferred.get("title"):
         lyric_index = -1
