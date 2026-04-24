@@ -96,7 +96,8 @@ HTML = """<!doctype html>
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
-      letter-spacing: 0.18em;
+      font-variant-caps: all-small-caps;
+      letter-spacing: 0.12em;
       font-size: 30px;
       font-weight: 800;
       width: fit-content;
@@ -104,9 +105,8 @@ HTML = """<!doctype html>
     .chip.alt {
       background: rgba(140, 24, 36, 0.28);
       border: 1px solid rgba(255, 99, 124, 0.18);
-      color: var(--text);
-      letter-spacing: 0.04em;
-      text-transform: none;
+      color: #ffd8de;
+      letter-spacing: 0.1em;
     }
     .lastfm-logo {
       display: inline-flex;
@@ -124,9 +124,9 @@ HTML = """<!doctype html>
       text-transform: lowercase;
     }
     .lastfm-count {
-      font-size: 0.95em;
-      font-weight: 750;
-      color: #ffd8de;
+      font-size: 0.88em;
+      font-weight: 650;
+      color: inherit;
     }
     .cover {
       width: 100%;
@@ -222,7 +222,7 @@ HTML = """<!doctype html>
       justify-content: center;
       text-align: center;
       padding: 34px 48px;
-      font-size: clamp(90px, 6.6vw, 132px);
+      font-size: clamp(60px, 4.4vw, 88px);
       line-height: 1.14;
       font-weight: 650;
       overflow-wrap: anywhere;
@@ -256,7 +256,7 @@ HTML = """<!doctype html>
       .title { font-size: clamp(58px, 10vw, 88px); }
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
-      .card { font-size: clamp(58px, 8vw, 84px); }
+      .card { font-size: clamp(40px, 5.8vw, 58px); }
       .times, .statusline, .chip { font-size: 24px; }
     }
   </style>
