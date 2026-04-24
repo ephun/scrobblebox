@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -27,68 +27,78 @@ HTML = """<!doctype html>
   <title>ScrobbleBox Lyrics</title>
   <style>
     :root {
-      --bg-1: #08111f;
-      --bg-2: #102742;
-      --bg-3: #173553;
-      --panel: rgba(9, 19, 34, 0.84);
-      --panel-soft: rgba(19, 34, 56, 0.9);
-      --panel-border: rgba(255, 255, 255, 0.08);
-      --text: #f7fafc;
-      --muted: #b8c6d8;
-      --accent: #79f2c0;
-      --accent-2: #8ec5ff;
-      --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      --bg-1: #050807;
+      --bg-2: #0b1210;
+      --bg-3: #111917;
+      --glow: rgba(30, 215, 96, 0.18);
+      --panel: rgba(10, 14, 12, 0.9);
+      --panel-border: rgba(255, 255, 255, 0.06);
+      --text: #f6f8f6;
+      --muted: #b6c0ba;
+      --accent: #1ed760;
+      --accent-2: #9af0b7;
+      --shadow: 0 28px 90px rgba(0, 0, 0, 0.52);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Aptos", "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      font-family: "Avenir Next", "Montserrat", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(121, 242, 192, 0.16), transparent 30%),
-        radial-gradient(circle at bottom right, rgba(142, 197, 255, 0.18), transparent 30%),
-        linear-gradient(145deg, var(--bg-1), var(--bg-2) 52%, var(--bg-3));
+        radial-gradient(circle at top left, var(--glow), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(154, 240, 183, 0.08), transparent 32%),
+        linear-gradient(148deg, var(--bg-1), var(--bg-2) 48%, var(--bg-3));
       overflow: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(160deg, rgba(255,255,255,0.02), transparent 26%),
+        linear-gradient(0deg, rgba(0,0,0,0.28), rgba(0,0,0,0.28));
+      pointer-events: none;
     }
     .shell {
       display: grid;
-      grid-template-columns: minmax(360px, 33vw) 1fr;
+      grid-template-columns: minmax(420px, 35vw) 1fr;
       min-height: 100vh;
-      gap: 28px;
-      padding: 28px;
+      gap: 30px;
+      padding: 30px;
     }
     .panel {
+      position: relative;
       background: var(--panel);
       border: 1px solid var(--panel-border);
-      border-radius: 32px;
+      border-radius: 34px;
       box-shadow: var(--shadow);
-      backdrop-filter: blur(22px);
+      backdrop-filter: blur(26px);
     }
     .info {
-      padding: 28px;
+      padding: 30px;
       display: flex;
       flex-direction: column;
-      gap: 22px;
+      gap: 24px;
     }
     .chip {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 18px;
+      gap: 12px;
+      padding: 11px 18px;
       border-radius: 999px;
-      background: rgba(121, 242, 192, 0.12);
+      background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
-      letter-spacing: 0.2em;
-      font-size: 13px;
-      font-weight: 700;
+      letter-spacing: 0.18em;
+      font-size: 14px;
+      font-weight: 800;
       width: fit-content;
     }
     .cover {
       width: 100%;
       aspect-ratio: 1 / 1;
-      border-radius: 26px;
+      border-radius: 28px;
       object-fit: cover;
       background:
         linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
@@ -103,42 +113,50 @@ HTML = """<!doctype html>
       font-weight: 700;
     }
     .title {
-      font-size: clamp(46px, 5.6vw, 86px);
-      line-height: 0.92;
+      font-size: clamp(68px, 6.8vw, 112px);
+      line-height: 0.94;
       font-weight: 800;
-      letter-spacing: -0.03em;
+      letter-spacing: -0.035em;
+      text-shadow: 0 8px 24px rgba(0,0,0,0.32);
     }
     .artist {
       color: var(--text);
-      font-size: clamp(22px, 2.2vw, 34px);
-      font-weight: 700;
+      font-size: clamp(36px, 3vw, 52px);
+      font-weight: 750;
     }
     .meta {
       color: var(--muted);
-      font-size: clamp(18px, 1.8vw, 26px);
+      font-size: clamp(28px, 2.4vw, 38px);
+      font-weight: 600;
     }
     .ticker {
       overflow: hidden;
-      white-space: nowrap;
       position: relative;
+      white-space: nowrap;
     }
-    .ticker > span {
-      display: inline-block;
-      padding-right: 0;
-      min-width: auto;
+    .ticker-track {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 3.5rem;
+      min-width: max-content;
+      transform: translate3d(0, 0, 0);
     }
-    .ticker.overflow > span {
-      padding-right: 4rem;
-      min-width: 100%;
-      animation: marquee 14s linear infinite;
+    .ticker-copy {
+      display: none;
+    }
+    .ticker.overflow .ticker-copy {
+      display: inline;
+    }
+    .ticker.overflow .ticker-track {
+      animation: marquee var(--ticker-duration, 16s) linear infinite;
     }
     @keyframes marquee {
-      0%, 12% { transform: translateX(0); }
-      88%, 100% { transform: translateX(-100%); }
+      0%, 16% { transform: translateX(0); }
+      84%, 100% { transform: translateX(calc(-1 * var(--ticker-distance, 0px))); }
     }
     .bar {
       position: relative;
-      height: 14px;
+      height: 16px;
       border-radius: 999px;
       background: rgba(255,255,255,0.08);
       overflow: hidden;
@@ -147,56 +165,73 @@ HTML = """<!doctype html>
       height: 100%;
       width: 0%;
       background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 18px rgba(30,215,96,0.45);
       transition: width 0.6s linear;
     }
     .times {
       display: flex;
       justify-content: space-between;
       color: var(--muted);
-      font-size: 20px;
-      font-weight: 600;
+      font-size: 28px;
+      font-weight: 700;
       letter-spacing: 0.04em;
     }
     .lyrics {
-      padding: 28px;
+      padding: 30px;
       display: grid;
       grid-template-rows: 0.8fr 1.05fr 0.8fr;
       gap: 22px;
       min-height: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.03));
     }
     .card {
       border-radius: 28px;
-      border: 1px solid rgba(255,255,255,0.08);
-      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.035);
       display: flex;
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 28px 42px;
-      font-size: clamp(28px, 3vw, 44px);
+      padding: 30px 42px;
+      font-size: clamp(40px, 3.6vw, 58px);
       line-height: 1.2;
-      font-weight: 600;
-      transition: transform 240ms ease, background 240ms ease, opacity 240ms ease, border-color 240ms ease;
+      font-weight: 650;
+      transition: transform 260ms ease, background 260ms ease, opacity 260ms ease, border-color 260ms ease;
     }
     .card.current {
-      background: linear-gradient(135deg, rgba(121,242,192,0.16), rgba(142,197,255,0.14));
-      border-color: rgba(121,242,192,0.36);
-      transform: scale(1.015);
-      font-size: clamp(38px, 4.2vw, 68px);
+      background: linear-gradient(135deg, rgba(30,215,96,0.18), rgba(154,240,183,0.1));
+      border-color: rgba(30,215,96,0.36);
+      transform: scale(1.01);
+      font-size: clamp(56px, 5.2vw, 92px);
       font-weight: 800;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
     }
     .message {
       color: var(--muted);
       background: rgba(255,255,255,0.03);
     }
+    .card.animate {
+      animation: lyricPush 320ms cubic-bezier(0.2, 0.9, 0.2, 1);
+    }
+    @keyframes lyricPush {
+      0% {
+        opacity: 0.35;
+        transform: translateY(24px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
     .statusline {
       display: flex;
       justify-content: space-between;
       color: var(--muted);
-      font-size: 15px;
+      font-size: 22px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+      gap: 18px;
     }
     @media (max-width: 900px) {
       .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -211,9 +246,9 @@ HTML = """<!doctype html>
       <div class="chip" id="chip">Listening</div>
       <img class="cover" id="cover" alt="Album art">
       <div class="eyebrow">Now Spinning</div>
-      <div class="title ticker" id="title"><span>Listening...</span></div>
-      <div class="artist ticker" id="artist"><span>ScrobbleBox</span></div>
-      <div class="meta ticker" id="album"><span>Waiting for verified playback</span></div>
+      <div class="title ticker" id="title"><span class="ticker-track"><span class="ticker-primary">Listening...</span><span class="ticker-copy">Listening...</span></span></div>
+      <div class="artist ticker" id="artist"><span class="ticker-track"><span class="ticker-primary">ScrobbleBox</span><span class="ticker-copy">ScrobbleBox</span></span></div>
+      <div class="meta ticker" id="album"><span class="ticker-track"><span class="ticker-primary">Waiting for verified playback</span><span class="ticker-copy">Waiting for verified playback</span></span></div>
       <div class="bar"><div id="progress"></div></div>
       <div class="times">
         <span id="elapsed">0:00</span>
@@ -247,6 +282,7 @@ HTML = """<!doctype html>
       next: document.getElementById('next'),
     };
     let state = null;
+    let renderedLyrics = { prev: '', current: '', next: '' };
 
     function fmt(totalSeconds) {
       if (!totalSeconds || totalSeconds < 0) return '0:00';
@@ -261,21 +297,53 @@ HTML = """<!doctype html>
     }
 
     function setTicker(el, text) {
-      const span = el.querySelector('span') || document.createElement('span');
-      span.textContent = text;
-      if (!span.parentElement) el.replaceChildren(span);
+      const track = document.createElement('span');
+      track.className = 'ticker-track';
+      const primary = document.createElement('span');
+      primary.className = 'ticker-primary';
+      primary.textContent = text;
+      const copy = document.createElement('span');
+      copy.className = 'ticker-copy';
+      copy.textContent = text;
+      track.replaceChildren(primary, copy);
+      el.replaceChildren(track);
       el.classList.remove('overflow');
+      el.style.removeProperty('--ticker-distance');
+      el.style.removeProperty('--ticker-duration');
     }
 
     function updateTickers() {
       [els.title, els.artist, els.album].forEach((el) => {
         el.classList.remove('overflow');
-        const span = el.querySelector('span');
-        if (!span) return;
-        if (span.scrollWidth > el.clientWidth + 4) {
+        const primary = el.querySelector('.ticker-primary');
+        if (!primary) return;
+        const overflow = primary.scrollWidth - el.clientWidth;
+        if (overflow > 8) {
+          const distance = overflow + 56;
+          const duration = Math.max(10, Math.min(24, distance / 22));
+          el.style.setProperty('--ticker-distance', `${distance}px`);
+          el.style.setProperty('--ticker-duration', `${duration}s`);
           el.classList.add('overflow');
         }
       });
+    }
+
+    function animateLyrics(prevText, currentText, nextText) {
+      const changed = (
+        renderedLyrics.prev !== prevText ||
+        renderedLyrics.current !== currentText ||
+        renderedLyrics.next !== nextText
+      );
+      els.prev.textContent = prevText;
+      els.current.textContent = currentText;
+      els.next.textContent = nextText;
+      if (!changed) return;
+      [els.prev, els.current, els.next].forEach((el) => {
+        el.classList.remove('animate');
+        void el.offsetWidth;
+        el.classList.add('animate');
+      });
+      renderedLyrics = { prev: prevText, current: currentText, next: nextText };
     }
 
     function render() {
@@ -301,9 +369,11 @@ HTML = """<!doctype html>
       els.duration.textContent = duration ? fmt(duration) : '0:00';
       els.position.textContent = s.position ? `${s.position}${s.side ? ' • Side ' + s.side : ''}` : 'No side';
       els.updated.textContent = s.updated_at ? new Date(s.updated_at).toLocaleTimeString() : 'No signal';
-      els.prev.textContent = s.previous_lyric || '';
-      els.current.textContent = s.current_lyric || (playing ? 'No lyrics available.' : 'Listening...');
-      els.next.textContent = s.next_lyric || '';
+      animateLyrics(
+        s.previous_lyric || '',
+        s.current_lyric || (playing ? 'No lyrics available.' : 'Listening...'),
+        s.next_lyric || '',
+      );
       requestAnimationFrame(updateTickers);
     }
 
@@ -373,11 +443,13 @@ def forward_only(previous: dict | None, current: dict) -> dict:
         if curr_index == prev_index:
             prev_started = parse_iso_utc(previous.get("started_at"))
             curr_started = parse_iso_utc(current.get("started_at"))
-            if prev_started and curr_started and curr_started > prev_started:
+            prev_elapsed = int(previous.get("elapsed_seconds") or 0)
+            curr_elapsed = int(current.get("elapsed_seconds") or 0)
+            if prev_started and curr_started and curr_elapsed < prev_elapsed:
                 current = dict(current)
-                current["started_at"] = prev_started.isoformat()
-                elapsed = max(0, int((utc_now() - prev_started).total_seconds()))
-                current["elapsed_seconds"] = max(elapsed, int(previous.get("elapsed_seconds") or 0))
+                frozen_started = utc_now() - timedelta(seconds=prev_elapsed)
+                current["started_at"] = frozen_started.isoformat()
+                current["elapsed_seconds"] = prev_elapsed
                 if previous.get("previous_lyric"):
                     current["previous_lyric"] = previous["previous_lyric"]
                 if previous.get("current_lyric") and current.get("current_lyric") in {"Listening...", "", "..."}:

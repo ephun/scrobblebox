@@ -21,6 +21,7 @@ logging.basicConfig(
 )
 
 LOGGER = logging.getLogger(__name__)
+MAX_TIMING_SAMPLES = 8
 
 
 @dataclass(slots=True)
@@ -31,6 +32,15 @@ class CoreService:
     silence_tolerance_seconds: int = settings.silence_tolerance_seconds
     silence_threshold: float = settings.silence_threshold
     recognition_cooldown_seconds: int = settings.recognition_cooldown_seconds
+
+    @staticmethod
+    def _append_timing_sample(pending: PendingScrobble, started_at: datetime, offset_seconds: int) -> None:
+        pending.timing_started_at_samples.append(started_at)
+        pending.offset_seconds_samples.append(offset_seconds)
+        if len(pending.timing_started_at_samples) > MAX_TIMING_SAMPLES:
+            pending.timing_started_at_samples = pending.timing_started_at_samples[-MAX_TIMING_SAMPLES:]
+        if len(pending.offset_seconds_samples) > MAX_TIMING_SAMPLES:
+            pending.offset_seconds_samples = pending.offset_seconds_samples[-MAX_TIMING_SAMPLES:]
 
     def run(self) -> None:
         LOGGER.info("Starting ScrobbleBox Core")
@@ -78,6 +88,8 @@ class CoreService:
                                     pending.started_at,
                                     audio_active=False,
                                     status="paused",
+                                    timing_started_at_samples=pending.timing_started_at_samples,
+                                    offset_seconds_samples=pending.offset_seconds_samples,
                                 )
                             )
                         else:
@@ -115,28 +127,33 @@ class CoreService:
 
                 started_at = recognition.recognized_at - timedelta(seconds=recognition.offset_seconds)
                 if pending and same_track(pending.track, validated):
+                    self._append_timing_sample(pending, started_at, recognition.offset_seconds)
                     if started_at < pending.started_at:
                         pending.started_at = started_at
                         pending.scrobble_at = build_pending_scrobble(
                             pending.track,
                             pending.started_at,
                         ).scrobble_at
-                        state_store.write(
-                            DisplayState.from_track(
-                                pending.track,
-                                pending.started_at,
-                                audio_active=True,
-                            )
+                    state_store.write(
+                        DisplayState.from_track(
+                            pending.track,
+                            pending.started_at,
+                            audio_active=True,
+                            timing_started_at_samples=pending.timing_started_at_samples,
+                            offset_seconds_samples=pending.offset_seconds_samples,
                         )
+                    )
                     LOGGER.info("Ignoring duplicate recognition for %s - %s", validated.artist, validated.title)
                     continue
 
-                pending = build_pending_scrobble(validated, started_at)
+                pending = build_pending_scrobble(validated, started_at, recognition)
                 state_store.write(
                     DisplayState.from_track(
                         validated,
                         started_at,
                         audio_active=True,
+                        timing_started_at_samples=pending.timing_started_at_samples,
+                        offset_seconds_samples=pending.offset_seconds_samples,
                     )
                 )
                 if not pending.now_playing_sent:
@@ -162,6 +179,8 @@ class CoreService:
                 pending.started_at,
                 audio_active=True,
                 status="scrobbled",
+                timing_started_at_samples=pending.timing_started_at_samples,
+                offset_seconds_samples=pending.offset_seconds_samples,
             )
         )
 

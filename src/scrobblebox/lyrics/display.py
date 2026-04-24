@@ -214,6 +214,23 @@ def estimated_duration_seconds(state: dict[str, Any], lyrics: LyricsDocument | N
     return DEFAULT_TRACK_SECONDS
 
 
+def timing_sample_datetimes(state: dict[str, Any]) -> list[datetime]:
+    samples: list[datetime] = []
+    for raw in list(state.get("timing_started_at_samples") or []):
+        parsed = parse_iso_utc(str(raw))
+        if parsed is not None:
+            samples.append(parsed)
+    return samples
+
+
+def averaged_started_at(state: dict[str, Any]) -> datetime | None:
+    samples = timing_sample_datetimes(state)
+    if not samples:
+        return parse_iso_utc(state.get("started_at"))
+    average_timestamp = sum(item.timestamp() for item in samples) / len(samples)
+    return datetime.fromtimestamp(average_timestamp, tz=timezone.utc)
+
+
 def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], started_at: datetime) -> dict[str, Any]:
     state = dict(base_state)
     state["status"] = "inferred"
@@ -231,7 +248,7 @@ def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], star
 
 def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics: LyricsDocument | None) -> tuple[dict[str, Any], LyricsDocument | None, int]:
     state = dict(raw_state)
-    started_at = parse_iso_utc(state.get("started_at"))
+    started_at = averaged_started_at(state)
     if not started_at:
         return state, initial_lyrics, 0
 
@@ -287,12 +304,15 @@ def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track
     if not lyrics.lines:
         return ("", "No lyrics available.", "")
 
-    index = 0
+    index = -1
     for i, line in enumerate(lyrics.lines):
         if line.time_seconds <= elapsed_seconds:
             index = i
         else:
             break
+    if index < 0:
+        next_text = lyrics.lines[0].text or "..."
+        return ("", "...", next_text)
     prev_text = lyrics.lines[index - 1].text if index > 0 else ""
     current_text = lyrics.lines[index].text or "..."
     next_text = lyrics.lines[index + 1].text if index + 1 < len(lyrics.lines) else ""
@@ -302,7 +322,7 @@ def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track
 def build_view_model(raw_state: dict[str, Any], repo: LyricRepository) -> dict[str, Any]:
     initial_lyrics = repo.load(raw_state) if raw_state.get("title") else None
     inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
-    started_at = parse_iso_utc(inferred.get("started_at"))
+    started_at = averaged_started_at(inferred)
     elapsed = max(0, int((utc_now() - started_at).total_seconds())) if started_at else 0
 
     # Never show backward motion: the browser increments locally between polls and the
@@ -322,12 +342,13 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository) -> dict[s
 
     inferred["elapsed_seconds"] = elapsed
     inferred["display_duration_seconds"] = int(inferred.get("duration_seconds") or 0)
+    inferred["started_at"] = started_at.isoformat() if started_at else inferred.get("started_at")
     inferred["previous_lyric"] = prev_text
     inferred["current_lyric"] = current_text
     inferred["next_lyric"] = next_text
     inferred["lyric_index"] = -1
     if lyrics and lyrics.lines and inferred.get("title"):
-        lyric_index = 0
+        lyric_index = -1
         for i, line in enumerate(lyrics.lines):
             if line.time_seconds <= elapsed:
                 lyric_index = i

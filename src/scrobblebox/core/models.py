@@ -52,5 +52,7 @@ class PendingScrobble:
     track: Track
     started_at: datetime
     scrobble_at: datetime
+    timing_started_at_samples: list[datetime] = field(default_factory=list)
+    offset_seconds_samples: list[int] = field(default_factory=list)
     now_playing_sent: bool = False
     scrobbled: bool = False

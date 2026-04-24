@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +31,8 @@ class DisplayState:
     side: str | None = None
     position: str | None = None
     release_tracks: list[dict] | None = None
+    timing_started_at_samples: list[str] = field(default_factory=list)
+    offset_seconds_samples: list[int] = field(default_factory=list)
     message: str = ""
 
     @classmethod
@@ -50,6 +52,8 @@ class DisplayState:
         *,
         audio_active: bool,
         status: str = "playing",
+        timing_started_at_samples: list[datetime] | None = None,
+        offset_seconds_samples: list[int] | None = None,
     ) -> "DisplayState":
         return cls(
             status=status,
@@ -77,6 +81,11 @@ class DisplayState:
                 }
                 for item in track.release_tracks
             ],
+            timing_started_at_samples=[
+                item.astimezone(timezone.utc).isoformat()
+                for item in (timing_started_at_samples or [started_at])
+            ],
+            offset_seconds_samples=list(offset_seconds_samples or []),
         )
 
 
