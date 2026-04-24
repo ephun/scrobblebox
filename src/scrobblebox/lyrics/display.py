@@ -69,6 +69,7 @@ DEFAULT_TRACK_SECONDS = 210
 LYRIC_END_GRACE_SECONDS = 8
 MIN_TRACK_SECONDS = 90
 LYRIC_PLACEHOLDER = "\u266a"
+LYRIC_TIMING_LEAD_SECONDS = settings.lyric_timing_lead_seconds
 
 
 class LyricRepository:
@@ -478,10 +479,11 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: L
     inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
     started_at = averaged_started_at(inferred)
     elapsed = max(0, int((utc_now() - started_at).total_seconds())) if started_at else 0
+    lyric_elapsed = max(0.0, elapsed + LYRIC_TIMING_LEAD_SECONDS)
 
     # Never show backward motion: the browser increments locally between polls and the
     # server only moves the track start earlier, never later.
-    prev_text, current_text, next_text = stable_lyric_cards(lyrics, elapsed, bool(inferred.get("title")))
+    prev_text, current_text, next_text = stable_lyric_cards(lyrics, lyric_elapsed, bool(inferred.get("title")))
 
     if inferred.get("title"):
         release_tracks = list(inferred.get("release_tracks") or [])
@@ -505,7 +507,7 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: L
     if lyrics and lyrics.lines and inferred.get("title"):
         lyric_index = -1
         for i, line in enumerate(lyrics.lines):
-            if line.time_seconds <= elapsed:
+            if line.time_seconds <= lyric_elapsed:
                 lyric_index = i
             else:
                 break

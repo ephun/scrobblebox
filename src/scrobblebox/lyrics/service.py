@@ -91,14 +91,14 @@ HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 24px 38px;
+      padding: 26px 42px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       font-variant-caps: all-small-caps;
       letter-spacing: 0.1em;
-      font-size: 40px;
+      font-size: 44px;
       font-weight: 760;
       width: fit-content;
     }
@@ -106,27 +106,6 @@ HTML = """<!doctype html>
       background: rgba(140, 24, 36, 0.24);
       border: 1px solid rgba(255, 78, 108, 0.3);
       color: #ff637d;
-      letter-spacing: 0.1em;
-    }
-    .lastfm-logo {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 1.7em;
-      height: 1.7em;
-      padding: 0 0.42em;
-      border-radius: 999px;
-      background: #bb2336;
-      color: #fff7f8;
-      font-size: 0.72em;
-      font-weight: 900;
-      letter-spacing: -0.03em;
-      text-transform: lowercase;
-    }
-    .lastfm-count {
-      font-size: 0.9em;
-      font-weight: 700;
-      color: inherit;
     }
     .cover {
       width: 100%;
@@ -144,10 +123,10 @@ HTML = """<!doctype html>
       font-weight: 800;
       letter-spacing: -0.035em;
       text-shadow: 0 8px 24px rgba(0,0,0,0.32);
-      padding-bottom: 0.06em;
+      padding-bottom: 0.02em;
     }
     .title .ticker-track {
-      padding-bottom: 0.02em;
+      padding-bottom: 0;
     }
     .artist {
       color: var(--text);
@@ -257,7 +236,7 @@ HTML = """<!doctype html>
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
       .card { font-size: clamp(40px, 5.8vw, 58px); }
-      .times, .statusline, .chip { font-size: 30px; }
+      .times, .statusline, .chip { font-size: 32px; }
     }
   </style>
 </head>
@@ -267,7 +246,7 @@ HTML = """<!doctype html>
       <img class="cover" id="cover" alt="Album art">
       <div class="chip-row">
         <div class="chip" id="chip">Listening</div>
-        <div class="chip alt" id="lastfm-chip"><span class="lastfm-logo">fm</span><span class="lastfm-count" id="lastfm-count">--</span></div>
+        <div class="chip alt" id="lastfm-chip">Last.fm --</div>
       </div>
       <div class="title ticker" id="title"><span class="ticker-track"><span class="ticker-primary">Listening...</span><span class="ticker-copy">Listening...</span></span></div>
       <div class="artist ticker" id="artist"><span class="ticker-track"><span class="ticker-primary">ScrobbleBox</span><span class="ticker-copy">ScrobbleBox</span></span></div>
@@ -292,7 +271,6 @@ HTML = """<!doctype html>
     const els = {
       chip: document.getElementById('chip'),
       lastfmChip: document.getElementById('lastfm-chip'),
-      lastfmCount: document.getElementById('lastfm-count'),
       cover: document.getElementById('cover'),
       title: document.getElementById('title'),
       artist: document.getElementById('artist'),
@@ -385,10 +363,10 @@ HTML = """<!doctype html>
       const chipLabel = s.audio_active ? 'Now Playing' : 'Listening';
       els.chip.textContent = chipLabel;
       if (typeof s.lastfm_playcount === 'number') {
-        els.lastfmCount.textContent = s.lastfm_playcount === 1 ? '1 play' : `${s.lastfm_playcount} plays`;
+        els.lastfmChip.textContent = s.lastfm_playcount === 1 ? 'Last.fm 1 play' : `Last.fm ${s.lastfm_playcount} plays`;
         els.lastfmChip.style.display = 'inline-flex';
       } else {
-        els.lastfmCount.textContent = '--';
+        els.lastfmChip.textContent = 'Last.fm --';
         els.lastfmChip.style.display = playing ? 'inline-flex' : 'none';
       }
       if (renderedMeta.title !== titleText) {
