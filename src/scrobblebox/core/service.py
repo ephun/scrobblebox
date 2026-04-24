@@ -94,7 +94,7 @@ class CoreService:
                         seconds=self.silence_tolerance_seconds
                     ):
                         audio_active = False
-                        if pending and not pending.scrobbled:
+                        if pending:
                             state_store.write(
                                 DisplayState.from_track(
                                     pending.track,

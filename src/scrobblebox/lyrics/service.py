@@ -91,19 +91,19 @@ HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 21px 32px;
+      padding: 24px 38px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       font-variant-caps: all-small-caps;
-      letter-spacing: 0.12em;
-      font-size: 34px;
-      font-weight: 800;
+      letter-spacing: 0.1em;
+      font-size: 40px;
+      font-weight: 760;
       width: fit-content;
     }
     .chip.alt {
-      background: rgba(140, 24, 36, 0.22);
+      background: rgba(140, 24, 36, 0.24);
       border: 1px solid rgba(255, 78, 108, 0.3);
       color: #ff637d;
       letter-spacing: 0.1em;
@@ -124,8 +124,8 @@ HTML = """<!doctype html>
       text-transform: lowercase;
     }
     .lastfm-count {
-      font-size: 0.88em;
-      font-weight: 650;
+      font-size: 0.9em;
+      font-weight: 700;
       color: inherit;
     }
     .cover {
@@ -144,10 +144,10 @@ HTML = """<!doctype html>
       font-weight: 800;
       letter-spacing: -0.035em;
       text-shadow: 0 8px 24px rgba(0,0,0,0.32);
-      padding-bottom: 0.14em;
+      padding-bottom: 0.06em;
     }
     .title .ticker-track {
-      padding-bottom: 0.08em;
+      padding-bottom: 0.02em;
     }
     .artist {
       color: var(--text);
@@ -257,7 +257,7 @@ HTML = """<!doctype html>
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
       .card { font-size: clamp(40px, 5.8vw, 58px); }
-      .times, .statusline, .chip { font-size: 26px; }
+      .times, .statusline, .chip { font-size: 30px; }
     }
   </style>
 </head>
