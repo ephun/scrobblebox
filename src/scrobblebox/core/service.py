@@ -110,7 +110,7 @@ class CoreService:
                 if clip is None:
                     continue
 
-                recognition = recognizer.recognize_samples(clip, settings.audio_sample_rate)
+                recognition = recognizer.recognize_samples(clip.samples, settings.audio_sample_rate)
                 last_recognition_at = datetime.now(timezone.utc)
                 if recognition is None or not recognition.title or not recognition.artist:
                     continue
@@ -125,7 +125,7 @@ class CoreService:
                 if validated is None:
                     continue
 
-                started_at = recognition.recognized_at - timedelta(seconds=recognition.offset_seconds)
+                started_at = clip.started_at - timedelta(seconds=recognition.offset_seconds)
                 if pending and same_track(pending.track, validated):
                     self._append_timing_sample(pending, started_at, recognition.offset_seconds)
                     if started_at < pending.started_at:
@@ -146,7 +146,8 @@ class CoreService:
                     LOGGER.info("Ignoring duplicate recognition for %s - %s", validated.artist, validated.title)
                     continue
 
-                pending = build_pending_scrobble(validated, started_at, recognition)
+                pending = build_pending_scrobble(validated, started_at)
+                self._append_timing_sample(pending, started_at, recognition.offset_seconds)
                 state_store.write(
                     DisplayState.from_track(
                         validated,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from scrobblebox.core.models import PendingScrobble, RecognitionResult, Track
+from scrobblebox.core.models import PendingScrobble, Track
 
 
 def scrobble_due_at(started_at: datetime, duration_seconds: int | None) -> datetime:
@@ -24,17 +24,9 @@ def same_track(left: Track, right: Track) -> bool:
 def build_pending_scrobble(
     track: Track,
     started_at: datetime,
-    recognition: RecognitionResult | None = None,
 ) -> PendingScrobble:
-    timing_samples = [started_at]
-    offset_samples: list[int] = []
-    if recognition is not None:
-        timing_samples = [recognition.recognized_at - timedelta(seconds=recognition.offset_seconds)]
-        offset_samples = [recognition.offset_seconds]
     return PendingScrobble(
         track=track,
         started_at=started_at,
         scrobble_at=scrobble_due_at(started_at, track.duration_seconds),
-        timing_started_at_samples=timing_samples,
-        offset_seconds_samples=offset_samples,
     )

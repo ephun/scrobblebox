@@ -46,6 +46,13 @@ class AudioChunk:
 
 
 @dataclass(slots=True)
+class AudioClip:
+    samples: np.ndarray
+    started_at: datetime
+    ended_at: datetime
+
+
+@dataclass(slots=True)
 class AudioCapture:
     """Capture audio blocks from the configured input device."""
 
@@ -110,8 +117,8 @@ class RollingAudioBuffer:
         while self._chunks and self._chunks[0].recorded_at < cutoff:
             self._chunks.popleft()
 
-    def recent_clip(self) -> np.ndarray | None:
-        """Return the most recent clip-sized mono buffer."""
+    def recent_clip(self) -> AudioClip | None:
+        """Return the most recent clip-sized mono buffer with clip timing metadata."""
         if not self._chunks:
             return None
 
@@ -128,4 +135,7 @@ class RollingAudioBuffer:
             return None
 
         combined = np.concatenate(list(reversed(parts)))
-        return combined[-clip_samples:]
+        clip = combined[-clip_samples:]
+        ended_at = self._chunks[-1].recorded_at
+        started_at = ended_at - timedelta(seconds=len(clip) / self.samplerate)
+        return AudioClip(samples=clip, started_at=started_at, ended_at=ended_at)
