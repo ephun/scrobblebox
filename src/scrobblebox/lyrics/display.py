@@ -143,6 +143,77 @@ class LyricRepository:
         lines.sort(key=lambda item: item.time_seconds)
         return LyricsDocument(lines=lines, instrumental=instrumental)
 
+    def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
+        titles = query_variants(str(state.get("lyric_title") or state.get("title") or ""))
+        artists = query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
+        albums = query_variants(str(state.get("lyric_album") or state.get("album") or ""))
+        if not titles or not artists:
+            return None
+        duration = state.get("duration_seconds")
+        for title in titles:
+            for artist in artists:
+                for album in albums or [""]:
+                    params = {
+                        "track_name": title,
+                        "artist_name": artist,
+                    }
+                    if album:
+                        params["album_name"] = album
+                    if duration:
+                        params["duration"] = duration
+
+                    response = self.session.get("https://lrclib.net/api/search", params=params, timeout=20)
+                    response.raise_for_status()
+                    results = response.json()
+                    if not results:
+                        continue
+
+                    best = results[0]
+                    document = self._document_from_result(best)
+                    target = next((path for path in candidates if path.suffix.lower() == ".json"), None)
+                    if target is not None:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        payload = {
+                            "instrumental": bool(best.get("instrumental", False)),
+                            "lines": [
+                                {"time_seconds": line.time_seconds, "text": line.text}
+                                for line in document.lines
+                            ],
+                        }
+                        target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+                    return document
+        return None
+
+    def _document_from_result(self, result: dict[str, Any]) -> LyricsDocument:
+        synced = result.get("syncedLyrics")
+        if synced:
+            return self._parse_lrc(str(synced), instrumental=bool(result.get("instrumental", False)))
+        plain = result.get("plainLyrics")
+        if plain:
+            return LyricsDocument(
+                lines=[
+                    LyricLine(float(index * 4), line)
+                    for index, line in enumerate(str(plain).splitlines())
+                    if line.strip()
+                ],
+                instrumental=bool(result.get("instrumental", False)),
+            )
+        return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
+
+    def _parse_lrc(self, text: str, *, instrumental: bool = False) -> LyricsDocument:
+        lines: list[LyricLine] = []
+        for raw_line in text.splitlines():
+            matches = list(re.finditer(r"\[(\d+):(\d+(?:\.\d+)?)\]", raw_line))
+            if not matches:
+                continue
+            content = re.sub(r"\[[^\]]+\]", "", raw_line).strip()
+            for match in matches:
+                minutes = int(match.group(1))
+                seconds = float(match.group(2))
+                lines.append(LyricLine(minutes * 60 + seconds, content))
+        lines.sort(key=lambda item: item.time_seconds)
+        return LyricsDocument(lines=lines, instrumental=instrumental)
+
 
 class LastfmRepository:
     def __init__(self) -> None:
