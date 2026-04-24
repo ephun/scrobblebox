@@ -421,48 +421,6 @@ def utc_now() -> datetime:
 
 
 def forward_only(previous: dict | None, current: dict) -> dict:
-    if not previous or not previous.get("title"):
-        return current
-    if not current.get("title"):
-        return current
-
-    prev_index = track_index(previous)
-    curr_index = track_index(current)
-    if same_release_side(previous, current) and prev_index is not None and curr_index is not None:
-        if curr_index < prev_index:
-            return previous
-        if curr_index == prev_index:
-            prev_started = parse_iso_utc(previous.get("started_at"))
-            curr_started = parse_iso_utc(current.get("started_at"))
-            prev_elapsed = int(previous.get("elapsed_seconds") or 0)
-            curr_elapsed = int(current.get("elapsed_seconds") or 0)
-            if prev_started and curr_started and curr_elapsed < prev_elapsed:
-                current = dict(current)
-                frozen_started = utc_now() - timedelta(seconds=prev_elapsed)
-                current["started_at"] = frozen_started.isoformat()
-                current["elapsed_seconds"] = prev_elapsed
-                if previous.get("previous_lyric"):
-                    current["previous_lyric"] = previous["previous_lyric"]
-                if previous.get("current_lyric") and current.get("current_lyric") in {"Listening...", "", "..."}:
-                    current["current_lyric"] = previous["current_lyric"]
-                if previous.get("next_lyric") and not current.get("next_lyric"):
-                    current["next_lyric"] = previous["next_lyric"]
-                previous_index = int(previous.get("lyric_index", -1))
-                current_index = int(current.get("lyric_index", -1))
-                if current_index >= 0 and previous_index > current_index:
-                    current["lyric_index"] = previous_index
-                    current["previous_lyric"] = previous.get("previous_lyric", current.get("previous_lyric", ""))
-                    current["current_lyric"] = previous.get("current_lyric", current.get("current_lyric", ""))
-                    current["next_lyric"] = previous.get("next_lyric", current.get("next_lyric", ""))
-    if same_track(previous, current):
-        previous_index = int(previous.get("lyric_index", -1))
-        current_index = int(current.get("lyric_index", -1))
-        if previous_index > current_index:
-            current = dict(current)
-            current["lyric_index"] = previous_index
-            current["previous_lyric"] = previous.get("previous_lyric", current.get("previous_lyric", ""))
-            current["current_lyric"] = previous.get("current_lyric", current.get("current_lyric", ""))
-            current["next_lyric"] = previous.get("next_lyric", current.get("next_lyric", ""))
     return current
 
 
