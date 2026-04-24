@@ -91,14 +91,14 @@ HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 26px 42px;
+      padding: 28px 46px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       font-variant-caps: all-small-caps;
       letter-spacing: 0.1em;
-      font-size: 44px;
+      font-size: 48px;
       font-weight: 760;
       width: fit-content;
     }
@@ -106,6 +106,10 @@ HTML = """<!doctype html>
       background: rgba(140, 24, 36, 0.24);
       border: 1px solid rgba(255, 78, 108, 0.3);
       color: #ff637d;
+      font-variant-caps: all-small-caps;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
     }
     .cover {
       width: 100%;
@@ -123,7 +127,7 @@ HTML = """<!doctype html>
       font-weight: 800;
       letter-spacing: -0.035em;
       text-shadow: 0 8px 24px rgba(0,0,0,0.32);
-      padding-bottom: 0.02em;
+      padding-bottom: 0;
     }
     .title .ticker-track {
       padding-bottom: 0;
@@ -236,7 +240,7 @@ HTML = """<!doctype html>
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
       .card { font-size: clamp(40px, 5.8vw, 58px); }
-      .times, .statusline, .chip { font-size: 32px; }
+      .times, .statusline, .chip { font-size: 34px; }
     }
   </style>
 </head>
@@ -297,7 +301,24 @@ HTML = """<!doctype html>
 
     function elapsedSeconds(startedAt) {
       if (!startedAt) return 0;
-      return Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000));
+      return Math.max(0, (Date.now() - Date.parse(startedAt)) / 1000);
+    }
+
+    function updateTicker(el) {
+      el.classList.remove('overflow');
+      const primary = el.querySelector('.ticker-primary');
+      if (!primary) return;
+      const overflow = primary.scrollWidth - el.clientWidth;
+      if (overflow > 8) {
+        const distance = overflow + 56;
+        const duration = Math.max(10, Math.min(24, distance / 22));
+        el.style.setProperty('--ticker-distance', `${distance}px`);
+        el.style.setProperty('--ticker-duration', `${duration}s`);
+        el.classList.add('overflow');
+      } else {
+        el.style.removeProperty('--ticker-distance');
+        el.style.removeProperty('--ticker-duration');
+      }
     }
 
     function setTicker(el, text) {
@@ -314,22 +335,11 @@ HTML = """<!doctype html>
       el.classList.remove('overflow');
       el.style.removeProperty('--ticker-distance');
       el.style.removeProperty('--ticker-duration');
+      requestAnimationFrame(() => updateTicker(el));
     }
 
     function updateTickers() {
-      [els.title, els.artist, els.album].forEach((el) => {
-        el.classList.remove('overflow');
-        const primary = el.querySelector('.ticker-primary');
-        if (!primary) return;
-        const overflow = primary.scrollWidth - el.clientWidth;
-        if (overflow > 8) {
-          const distance = overflow + 56;
-          const duration = Math.max(10, Math.min(24, distance / 22));
-          el.style.setProperty('--ticker-distance', `${distance}px`);
-          el.style.setProperty('--ticker-duration', `${duration}s`);
-          el.classList.add('overflow');
-        }
-      });
+      [els.title, els.artist, els.album].forEach(updateTicker);
     }
 
     function animateLyrics(prevText, currentText, nextText) {
@@ -393,7 +403,6 @@ HTML = """<!doctype html>
         s.current_lyric || (playing ? 'No lyrics available.' : 'Listening...'),
         s.next_lyric || '',
       );
-      requestAnimationFrame(updateTickers);
     }
 
     async function refresh() {
@@ -409,7 +418,8 @@ HTML = """<!doctype html>
 
     refresh();
     render();
-    setInterval(refresh, 500);
+    window.addEventListener('resize', updateTickers);
+    setInterval(refresh, 250);
     setInterval(render, 250);
   </script>
 </body>

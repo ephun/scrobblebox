@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     lyrics_host: str = Field(default="0.0.0.0", alias="LYRICS_HOST")
     lyrics_port: int = Field(default=8765, alias="LYRICS_PORT")
     lyrics_directory: Path = Field(default=Path("lyrics"), alias="LYRICS_DIRECTORY")
-    lyric_timing_lead_seconds: float = Field(default=0.35, alias="LYRIC_TIMING_LEAD_SECONDS")
 
     kasa_device_alias: str = Field(default="Oscilloscope", alias="KASA_DEVICE_ALIAS")
     kasa_username: str = Field(default="", alias="KASA_USERNAME")
