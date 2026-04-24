@@ -84,8 +84,7 @@ class OscilloscopeService:
 
                 warned_missing = False
                 cached_host = device.host
-                await device.update()
-                is_on = bool(device.is_on)
+                is_on = self._relay_state(device)
                 cached_is_on = is_on
 
                 if should_be_on and not is_on:
@@ -120,11 +119,6 @@ class OscilloscopeService:
         discover_kwargs = self._discover_kwargs()
         devices = await Discover.discover(discovery_timeout=5, **discover_kwargs)
         for host, device in devices.items():
-            try:
-                await device.update()
-            except Exception:
-                LOGGER.debug("Skipping Kasa device at %s after failed update", host, exc_info=True)
-                continue
             if getattr(device, "alias", None) == self.device_alias:
                 LOGGER.info("Resolved oscilloscope plug alias %r at %s", self.device_alias, host)
                 return device
@@ -133,7 +127,6 @@ class OscilloscopeService:
     async def _discover_single(self, host: str):
         try:
             device = await Discover.discover_single(host, **self._discover_kwargs())
-            await device.update()
             if getattr(device, "alias", None) == self.device_alias:
                 return device
             LOGGER.warning(
@@ -153,6 +146,14 @@ class OscilloscopeService:
         if self.kasa_password:
             kwargs["password"] = self.kasa_password
         return kwargs
+
+    @staticmethod
+    def _relay_state(device) -> bool:
+        sys_info = getattr(device, "sys_info", {}) or {}
+        relay_state = sys_info.get("relay_state")
+        if relay_state is None:
+            return bool(getattr(device, "is_on", False))
+        return bool(relay_state)
 
 
 def main() -> None:
