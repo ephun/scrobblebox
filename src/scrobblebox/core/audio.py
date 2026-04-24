@@ -41,6 +41,8 @@ def resolve_input_device(device_name: str) -> int | None:
 @dataclass(slots=True)
 class AudioChunk:
     samples: np.ndarray
+    started_at: datetime
+    ended_at: datetime
     recorded_at: datetime
     rms: float
 
@@ -64,6 +66,7 @@ class AudioCapture:
     device: int | None = field(init=False)
     blocksize: int = field(init=False)
     _stream: sd.InputStream | None = field(init=False, default=None)
+    _next_chunk_started_at: datetime | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.device = resolve_input_device(self.device_name)
@@ -71,6 +74,7 @@ class AudioCapture:
 
     def __enter__(self) -> "AudioCapture":
         LOGGER.info("Opening audio input stream")
+        self._next_chunk_started_at = None
         self._stream = sd.InputStream(
             samplerate=self.samplerate,
             channels=self.channels,
@@ -87,6 +91,7 @@ class AudioCapture:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+        self._next_chunk_started_at = None
 
     def _callback(self, indata, frames, time, status) -> None:
         if status:
@@ -94,8 +99,21 @@ class AudioCapture:
 
         mono = np.mean(indata.copy(), axis=1)
         rms = float(np.sqrt(np.mean(np.square(mono))))
+        frame_duration = timedelta(seconds=frames / self.samplerate)
+        if self._next_chunk_started_at is None:
+            started_at = datetime.now(timezone.utc) - frame_duration
+        else:
+            started_at = self._next_chunk_started_at
+        ended_at = started_at + frame_duration
+        self._next_chunk_started_at = ended_at
         self.block_queue.put(
-            AudioChunk(samples=mono, recorded_at=datetime.now(timezone.utc), rms=rms)
+            AudioChunk(
+                samples=mono,
+                started_at=started_at,
+                ended_at=ended_at,
+                recorded_at=ended_at,
+                rms=rms,
+            )
         )
 
 
@@ -114,7 +132,7 @@ class RollingAudioBuffer:
     def append(self, chunk: AudioChunk) -> None:
         self._chunks.append(chunk)
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.max_seconds)
-        while self._chunks and self._chunks[0].recorded_at < cutoff:
+        while self._chunks and self._chunks[0].ended_at < cutoff:
             self._chunks.popleft()
 
     def recent_clip(self) -> AudioClip | None:
@@ -124,9 +142,11 @@ class RollingAudioBuffer:
 
         clip_samples = self.samplerate * self.clip_seconds
         parts: list[np.ndarray] = []
+        selected_chunks: list[AudioChunk] = []
         collected = 0
         for chunk in reversed(self._chunks):
             parts.append(chunk.samples)
+            selected_chunks.append(chunk)
             collected += len(chunk.samples)
             if collected >= clip_samples:
                 break
@@ -134,8 +154,11 @@ class RollingAudioBuffer:
         if collected < clip_samples:
             return None
 
+        ordered_chunks = list(reversed(selected_chunks))
         combined = np.concatenate(list(reversed(parts)))
         clip = combined[-clip_samples:]
-        ended_at = self._chunks[-1].recorded_at
-        started_at = ended_at - timedelta(seconds=len(clip) / self.samplerate)
+        trimmed_prefix_samples = len(combined) - clip_samples
+        first_chunk = ordered_chunks[0]
+        started_at = first_chunk.started_at + timedelta(seconds=trimmed_prefix_samples / self.samplerate)
+        ended_at = started_at + timedelta(seconds=len(clip) / self.samplerate)
         return AudioClip(samples=clip, started_at=started_at, ended_at=ended_at)
