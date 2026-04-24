@@ -381,8 +381,8 @@ HTML = """<!doctype html>
 
     refresh();
     render();
-    setInterval(refresh, 2000);
-    setInterval(render, 1000);
+    setInterval(refresh, 500);
+    setInterval(render, 250);
   </script>
 </body>
 </html>
