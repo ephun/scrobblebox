@@ -91,21 +91,42 @@ HTML = """<!doctype html>
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 16px 24px;
+      padding: 18px 28px;
       border-radius: 999px;
       background: rgba(30, 215, 96, 0.14);
       color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 0.18em;
-      font-size: 25px;
+      font-size: 30px;
       font-weight: 800;
       width: fit-content;
     }
     .chip.alt {
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(140, 24, 36, 0.28);
+      border: 1px solid rgba(255, 99, 124, 0.18);
       color: var(--text);
-      letter-spacing: 0.08em;
+      letter-spacing: 0.04em;
       text-transform: none;
+    }
+    .lastfm-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.7em;
+      height: 1.7em;
+      padding: 0 0.42em;
+      border-radius: 999px;
+      background: #bb2336;
+      color: #fff7f8;
+      font-size: 0.72em;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      text-transform: lowercase;
+    }
+    .lastfm-count {
+      font-size: 0.95em;
+      font-weight: 750;
+      color: #ffd8de;
     }
     .cover {
       width: 100%;
@@ -119,10 +140,13 @@ HTML = """<!doctype html>
     }
     .title {
       font-size: clamp(82px, 7.4vw, 128px);
-      line-height: 1.02;
+      line-height: 1.08;
       font-weight: 800;
       letter-spacing: -0.035em;
       text-shadow: 0 8px 24px rgba(0,0,0,0.32);
+      padding-bottom: 0.14em;
+    }
+    .title .ticker-track {
       padding-bottom: 0.08em;
     }
     .artist {
@@ -198,7 +222,7 @@ HTML = """<!doctype html>
       justify-content: center;
       text-align: center;
       padding: 34px 48px;
-      font-size: clamp(62px, 4.9vw, 86px);
+      font-size: clamp(90px, 6.6vw, 132px);
       line-height: 1.14;
       font-weight: 650;
       overflow-wrap: anywhere;
@@ -232,8 +256,8 @@ HTML = """<!doctype html>
       .title { font-size: clamp(58px, 10vw, 88px); }
       .artist { font-size: clamp(34px, 6vw, 48px); }
       .meta { font-size: clamp(28px, 4.5vw, 40px); }
-      .card { font-size: clamp(42px, 6vw, 62px); }
-      .times, .statusline, .chip { font-size: 22px; }
+      .card { font-size: clamp(58px, 8vw, 84px); }
+      .times, .statusline, .chip { font-size: 24px; }
     }
   </style>
 </head>
@@ -243,7 +267,7 @@ HTML = """<!doctype html>
       <img class="cover" id="cover" alt="Album art">
       <div class="chip-row">
         <div class="chip" id="chip">Listening</div>
-        <div class="chip alt" id="lastfm-chip">Last.fm --</div>
+        <div class="chip alt" id="lastfm-chip"><span class="lastfm-logo">fm</span><span class="lastfm-count" id="lastfm-count">--</span></div>
       </div>
       <div class="title ticker" id="title"><span class="ticker-track"><span class="ticker-primary">Listening...</span><span class="ticker-copy">Listening...</span></span></div>
       <div class="artist ticker" id="artist"><span class="ticker-track"><span class="ticker-primary">ScrobbleBox</span><span class="ticker-copy">ScrobbleBox</span></span></div>
@@ -268,6 +292,7 @@ HTML = """<!doctype html>
     const els = {
       chip: document.getElementById('chip'),
       lastfmChip: document.getElementById('lastfm-chip'),
+      lastfmCount: document.getElementById('lastfm-count'),
       cover: document.getElementById('cover'),
       title: document.getElementById('title'),
       artist: document.getElementById('artist'),
@@ -360,11 +385,10 @@ HTML = """<!doctype html>
       const chipLabel = s.audio_active ? 'Now Playing' : 'Listening';
       els.chip.textContent = chipLabel;
       if (typeof s.lastfm_playcount === 'number') {
-        const plays = s.lastfm_playcount === 1 ? '1 play' : `${s.lastfm_playcount} plays`;
-        els.lastfmChip.textContent = `Last.fm ${plays}`;
+        els.lastfmCount.textContent = s.lastfm_playcount === 1 ? '1 play' : `${s.lastfm_playcount} plays`;
         els.lastfmChip.style.display = 'inline-flex';
       } else {
-        els.lastfmChip.textContent = 'Last.fm --';
+        els.lastfmCount.textContent = '--';
         els.lastfmChip.style.display = playing ? 'inline-flex' : 'none';
       }
       if (renderedMeta.title !== titleText) {
