@@ -29,7 +29,7 @@ def artist_alias_map() -> dict[str, list[str]]:
     if not alias_path.exists():
         return {}
 
-    payload = json.loads(alias_path.read_text(encoding="utf-8"))
+    payload = json.loads(alias_path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict):
         return {}
 
