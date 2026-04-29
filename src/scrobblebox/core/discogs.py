@@ -8,6 +8,7 @@ from typing import Any
 import requests
 from rapidfuzz import fuzz
 
+from scrobblebox.aliases import artist_variants
 from scrobblebox.config import settings
 from scrobblebox.core.models import RecognitionResult, ReleaseTrack, Track
 
@@ -99,16 +100,25 @@ class DiscogsClient:
         )
         return None
 
+    @staticmethod
+    def _best_artist_score(left: str, candidates: list[str]) -> int:
+        left_variants = [normalize_text(value) for value in artist_variants(left)]
+        right_variants: list[str] = []
+        for candidate in candidates:
+            right_variants.extend(normalize_text(value) for value in artist_variants(candidate))
+        left_variants = [value for value in left_variants if value]
+        right_variants = [value for value in right_variants if value]
+        if not left_variants or not right_variants:
+            return 0
+        return max(fuzz.token_set_ratio(left_variant, right_variant) for left_variant in left_variants for right_variant in right_variants)
+
     def _candidate_releases(self, recognition: RecognitionResult) -> list[CollectionRelease]:
         collection = self._load_collection()
         scored: list[tuple[int, CollectionRelease]] = []
-        recognition_artist = normalize_text(recognition.artist)
         recognition_album = normalize_text(recognition.album or "")
 
         for release in collection:
-            artist_score = max(
-                fuzz.token_set_ratio(recognition_artist, normalize_text(artist)) for artist in release.artists
-            ) if release.artists else 0
+            artist_score = self._best_artist_score(recognition.artist, release.artists) if release.artists else 0
             album_score = fuzz.token_set_ratio(recognition_album, normalize_text(release.title)) if recognition_album else 0
             scored.append((artist_score + album_score, release))
 
@@ -130,10 +140,7 @@ class DiscogsClient:
                 normalize_text(recognition.title),
                 normalize_text(entry_title),
             )
-            artist_score = max(
-                fuzz.token_set_ratio(normalize_text(recognition.artist), normalize_text(artist))
-                for artist in entry_artists
-            ) if entry_artists else 0
+            artist_score = self._best_artist_score(recognition.artist, entry_artists) if entry_artists else 0
             total = title_score + artist_score
             track = Track(
                 title=entry_title,

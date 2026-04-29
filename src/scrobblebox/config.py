@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     recognition_cooldown_seconds: int = Field(default=20, alias="RECOGNITION_COOLDOWN_SECONDS")
     discogs_match_threshold: int = Field(default=160, alias="DISCOGS_MATCH_THRESHOLD")
     discogs_candidate_limit: int = Field(default=8, alias="DISCOGS_CANDIDATE_LIMIT")
+    artist_alias_file: Path = Field(default=Path("local/artist_aliases.json"), alias="ARTIST_ALIAS_FILE")
     clip_storage_directory: Path = Field(default=Path("runtime/clips"), alias="CLIP_STORAGE_DIRECTORY")
     now_playing_state_file: Path = Field(
         default=Path("runtime/state/now_playing.json"),

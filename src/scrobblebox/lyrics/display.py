@@ -10,6 +10,7 @@ from typing import Any
 
 import requests
 
+from scrobblebox.aliases import artist_variants
 from scrobblebox.config import settings
 
 
@@ -63,6 +64,21 @@ def query_variants(value: str) -> list[str]:
     if ascii_no_parens and ascii_no_parens not in candidates:
         candidates.append(ascii_no_parens)
     return [candidate for candidate in candidates if candidate]
+
+
+def artist_query_variants(value: str) -> list[str]:
+    candidates: list[str] = []
+    for variant in artist_variants(value):
+        candidates.extend(query_variants(variant))
+    unique: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        folded = candidate.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        unique.append(candidate)
+    return unique
 
 
 DEFAULT_TRACK_SECONDS = 210
@@ -145,7 +161,7 @@ class LyricRepository:
 
     def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
         titles = query_variants(str(state.get("lyric_title") or state.get("title") or ""))
-        artists = query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
+        artists = artist_query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
         albums = query_variants(str(state.get("lyric_album") or state.get("album") or ""))
         if not titles or not artists:
             return None
@@ -257,7 +273,7 @@ class LastfmRepository:
 
     def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
         titles = query_variants(str(state.get("lyric_title") or state.get("title") or ""))
-        artists = query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
+        artists = artist_query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
         albums = query_variants(str(state.get("lyric_album") or state.get("album") or ""))
         if not titles or not artists:
             return None
