@@ -9,6 +9,7 @@ from scrobblebox.config import settings
 from scrobblebox.core.audio import AudioCapture, AudioChunk, RollingAudioBuffer
 from scrobblebox.core.discogs import DiscogsClient
 from scrobblebox.core.lastfm import LastFMClient
+from scrobblebox.core.listenbrainz import ListenBrainzClient
 from scrobblebox.core.models import PendingScrobble
 from scrobblebox.core.recognizer import ShazamRecognizer
 from scrobblebox.core.runtime import build_pending_scrobble, same_track
@@ -67,6 +68,7 @@ class CoreService:
         recognizer = ShazamRecognizer()
         discogs = DiscogsClient()
         lastfm = LastFMClient()
+        listenbrainz = ListenBrainzClient()
         state_store = StateStore()
         buffer = RollingAudioBuffer(
             samplerate=settings.audio_sample_rate,
@@ -84,11 +86,11 @@ class CoreService:
                 try:
                     chunk = capture.block_queue.get(timeout=1)
                 except Empty:
-                    self._flush_scrobble(lastfm, pending, state_store)
+                    self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
                     continue
 
                 buffer.append(chunk)
-                self._flush_scrobble(lastfm, pending, state_store)
+                self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
                 if not self._is_audio_active(chunk):
                     if last_audio_at and datetime.now(timezone.utc) - last_audio_at > timedelta(
                         seconds=self.silence_tolerance_seconds
@@ -176,12 +178,14 @@ class CoreService:
                 )
                 if not pending.now_playing_sent:
                     lastfm.update_now_playing(validated)
+                    listenbrainz.update_now_playing(validated)
                     pending.now_playing_sent = True
-                self._flush_scrobble(lastfm, pending, state_store)
+                self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
 
     def _flush_scrobble(
         self,
         lastfm: LastFMClient,
+        listenbrainz: ListenBrainzClient,
         pending: PendingScrobble | None,
         state_store: StateStore,
     ) -> None:
@@ -190,6 +194,7 @@ class CoreService:
         if datetime.now(timezone.utc) < pending.scrobble_at:
             return
         lastfm.scrobble(pending.track, pending.started_at)
+        listenbrainz.scrobble(pending.track, pending.started_at)
         pending.scrobbled = True
         state_store.write(
             DisplayState.from_track(
