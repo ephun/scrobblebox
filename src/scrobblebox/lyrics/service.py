@@ -8,7 +8,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from scrobblebox.config import settings
-from scrobblebox.lyrics.display import LastfmRepository, LyricRepository, build_view_model, parse_iso_utc
+from scrobblebox.lyrics.display import KoitoRepository, LastfmRepository, LyricRepository, build_view_model, parse_iso_utc
 from scrobblebox.lyrics.state import StateStore
 
 
@@ -372,7 +372,15 @@ HTML = """<!doctype html>
 
       const chipLabel = s.audio_active ? 'Now Playing' : 'Listening';
       els.chip.textContent = chipLabel;
-      if (typeof s.lastfm_playcount === 'number') {
+      if (s.display_koito_stats) {
+        if (typeof s.koito_playcount === 'number') {
+          els.lastfmChip.textContent = s.koito_playcount === 1 ? 'Koito 1 play' : `Koito ${s.koito_playcount} plays`;
+          els.lastfmChip.style.display = 'inline-flex';
+        } else {
+          els.lastfmChip.textContent = 'Koito --';
+          els.lastfmChip.style.display = playing ? 'inline-flex' : 'none';
+        }
+      } else if (typeof s.lastfm_playcount === 'number') {
         els.lastfmChip.textContent = s.lastfm_playcount === 1 ? 'Last.fm 1 play' : `Last.fm ${s.lastfm_playcount} plays`;
         els.lastfmChip.style.display = 'inline-flex';
       } else {
@@ -462,7 +470,7 @@ def forward_only(previous: dict | None, current: dict) -> dict:
     return current
 
 
-def build_handler(state_store: StateStore, repo: LyricRepository, lastfm: LastfmRepository) -> type[BaseHTTPRequestHandler]:
+def build_handler(state_store: StateStore, repo: LyricRepository, lastfm: LastfmRepository, koito: KoitoRepository) -> type[BaseHTTPRequestHandler]:
     last_view: dict | None = None
 
     class LyricsHandler(BaseHTTPRequestHandler):
@@ -472,7 +480,7 @@ def build_handler(state_store: StateStore, repo: LyricRepository, lastfm: Lastfm
                 self._send(HTTPStatus.OK, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 return
             if self.path == "/api/now-playing":
-                model = build_view_model(state_store.read(), repo, lastfm)
+                model = build_view_model(state_store.read(), repo, lastfm, koito)
                 model = forward_only(last_view, model)
                 last_view = model
                 payload = json.dumps(model).encode("utf-8")
@@ -514,7 +522,7 @@ class LyricsService:
         LOGGER.info("Starting ScrobbleBox Lyrics on %s:%s", self.host, self.port)
         server = ThreadingHTTPServer(
             (self.host, self.port),
-            build_handler(StateStore(), LyricRepository(), LastfmRepository()),
+            build_handler(StateStore(), LyricRepository(), LastfmRepository(), KoitoRepository()),
         )
         try:
             server.serve_forever()
