@@ -352,7 +352,7 @@ class KoitoRepository:
             url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/login"
             payload = {"username": "admin", "password": "password", "remember_me": "true"}
             resp = self.session.post(url, data=payload, timeout=5)
-            if resp.status_code == 200:
+            if resp.status_code == 204 or resp.status_code == 200:
                 self._logged_in = True
         except Exception:
             pass
@@ -375,17 +375,16 @@ class KoitoRepository:
         if not self._logged_in:
             self._login()
 
-        import urllib.parse
-        query = urllib.parse.quote(f"{title} {artist}")
         try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/search?q={query}"
+            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/now-playing"
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             payload = response.json()
             
-            for t in payload.get("tracks", []):
-                if t.get("title", "").casefold() == title.casefold():
-                    count = int(t.get("listen_count", 0))
+            if payload.get("currently_playing") and payload.get("track"):
+                track = payload.get("track")
+                if track.get("title", "").casefold() == title.casefold():
+                    count = int(track.get("listen_count", 0))
                     self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=2))
                     return count
                     
