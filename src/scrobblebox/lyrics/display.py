@@ -402,23 +402,9 @@ def timing_sample_datetimes(state: dict[str, Any]) -> list[datetime]:
 
 def averaged_started_at(state: dict[str, Any]) -> datetime | None:
     samples = timing_sample_datetimes(state)
-    offsets = list(state.get("offset_seconds_samples") or [])
-    
-    if not samples or not offsets or len(samples) != len(offsets):
+    if not samples:
         return parse_iso_utc(state.get("started_at"))
-        
-    true_start_timestamps = []
-    for dt, offset in zip(samples, offsets):
-        try:
-            # The true start time is the recognition time minus where we are in the song
-            true_start_timestamps.append(dt.timestamp() - float(offset))
-        except (ValueError, TypeError):
-            continue
-            
-    if not true_start_timestamps:
-        return parse_iso_utc(state.get("started_at"))
-        
-    average_timestamp = sum(true_start_timestamps) / len(true_start_timestamps)
+    average_timestamp = sum(item.timestamp() for item in samples) / len(samples)
     return datetime.fromtimestamp(average_timestamp, tz=timezone.utc)
 
 
