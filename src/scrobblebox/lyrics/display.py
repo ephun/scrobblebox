@@ -349,9 +349,9 @@ class KoitoRepository:
 
     def _login(self):
         try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/auth/login"
-            payload = {"username": "admin", "password": "password"}
-            resp = self.session.post(url, json=payload, timeout=5)
+            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/login"
+            payload = {"username": "admin", "password": "password", "remember_me": "true"}
+            resp = self.session.post(url, data=payload, timeout=5)
             if resp.status_code == 200:
                 self._logged_in = True
         except Exception:
@@ -378,7 +378,7 @@ class KoitoRepository:
         import urllib.parse
         query = urllib.parse.quote(f"{title} {artist}")
         try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/search?query={query}"
+            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/search?q={query}"
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             payload = response.json()
