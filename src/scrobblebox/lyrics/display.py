@@ -344,14 +344,23 @@ class KoitoRepository:
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "ScrobbleBox/0.1 (+https://github.com/ephun/scrobblebox)"})
-        if settings.koito_token:
-            self.session.headers.update({"Authorization": f"Bearer {settings.koito_token}"})
         self._cache: dict[tuple[str, str], CachedPlaycount] = {}
+        self._logged_in = False
+
+    def _login(self):
+        try:
+            url = f"{settings.koito_url.rstrip('/')}/apis/auth/login"
+            payload = {"username": "admin", "password": "password"}
+            resp = self.session.post(url, json=payload, timeout=5)
+            if resp.status_code == 200:
+                self._logged_in = True
+        except Exception:
+            pass
 
     def user_playcount(self, state: dict[str, Any]) -> int | None:
-        if not settings.display_koito_stats or not settings.koito_url or not settings.koito_token:
+        if not settings.display_koito_stats or not settings.koito_url:
             return None
-            
+
         artist = str(state.get("artist") or "").strip()
         title = str(state.get("title") or "").strip()
         if not artist or not title:
@@ -363,20 +372,27 @@ class KoitoRepository:
         if cached and cached.expires_at > now:
             return cached.count
 
-        params = {
-            "artist": artist,
-            "track": title,
-            "limit": 1
-        }
+        if not self._logged_in:
+            self._login()
+
+        import urllib.parse
+        query = urllib.parse.quote(f"{title} {artist}")
         try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/listens"
-            response = self.session.get(url, params=params, timeout=10)
+            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/search?query={query}"
+            response = self.session.get(url, timeout=10)
             response.raise_for_status()
             payload = response.json()
-            count = int(payload.get("total", 0))
-            self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=2))
-            return count
-        except Exception:
+            
+            for t in payload.get("tracks", []):
+                if t.get("title", "").casefold() == title.casefold():
+                    count = int(t.get("listen_count", 0))
+                    self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=2))
+                    return count
+                    
+            self._cache[key] = CachedPlaycount(count=0, expires_at=now + timedelta(hours=2))
+            return 0
+            
+        except Exception as e:
             self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
             return None
 
