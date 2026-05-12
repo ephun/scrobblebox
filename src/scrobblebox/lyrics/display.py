@@ -339,6 +339,48 @@ class LastfmRepository:
         return LyricsDocument(lines=lines, instrumental=instrumental)
 
 
+
+class KoitoRepository:
+    def __init__(self) -> None:
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": "ScrobbleBox/0.1 (+https://github.com/ephun/scrobblebox)"})
+        if settings.koito_token:
+            self.session.headers.update({"Authorization": f"Bearer {settings.koito_token}"})
+        self._cache: dict[tuple[str, str], CachedPlaycount] = {}
+
+    def user_playcount(self, state: dict[str, Any]) -> int | None:
+        if not settings.display_koito_stats or not settings.koito_url or not settings.koito_token:
+            return None
+            
+        artist = str(state.get("artist") or "").strip()
+        title = str(state.get("title") or "").strip()
+        if not artist or not title:
+            return None
+
+        key = (artist.casefold(), title.casefold())
+        cached = self._cache.get(key)
+        now = utc_now()
+        if cached and cached.expires_at > now:
+            return cached.count
+
+        params = {
+            "artist": artist,
+            "track": title,
+            "limit": 1
+        }
+        try:
+            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/listens"
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+            count = int(payload.get("total", 0))
+            self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=2))
+            return count
+        except Exception:
+            self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
+            return None
+
+
 def estimated_duration_seconds(state: dict[str, Any], lyrics: LyricsDocument | None) -> int:
     explicit_duration = state.get("duration_seconds")
     if explicit_duration and explicit_duration > 0:
@@ -360,9 +402,23 @@ def timing_sample_datetimes(state: dict[str, Any]) -> list[datetime]:
 
 def averaged_started_at(state: dict[str, Any]) -> datetime | None:
     samples = timing_sample_datetimes(state)
-    if not samples:
+    offsets = list(state.get("offset_seconds_samples") or [])
+    
+    if not samples or not offsets or len(samples) != len(offsets):
         return parse_iso_utc(state.get("started_at"))
-    average_timestamp = sum(item.timestamp() for item in samples) / len(samples)
+        
+    true_start_timestamps = []
+    for dt, offset in zip(samples, offsets):
+        try:
+            # The true start time is the recognition time minus where we are in the song
+            true_start_timestamps.append(dt.timestamp() - float(offset))
+        except (ValueError, TypeError):
+            continue
+            
+    if not true_start_timestamps:
+        return parse_iso_utc(state.get("started_at"))
+        
+    average_timestamp = sum(true_start_timestamps) / len(true_start_timestamps)
     return datetime.fromtimestamp(average_timestamp, tz=timezone.utc)
 
 
@@ -489,7 +545,7 @@ def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, ha
     return (prev_text, current_text, next_text)
 
 
-def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: LastfmRepository | None = None) -> dict[str, Any]:
+def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: LastfmRepository | None = None, koito: KoitoRepository | None = None) -> dict[str, Any]:
     initial_lyrics = repo.load(raw_state) if raw_state.get("title") else None
     inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
     started_at = averaged_started_at(inferred)
@@ -517,6 +573,8 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: L
     inferred["current_lyric"] = current_text
     inferred["next_lyric"] = next_text
     inferred["lastfm_playcount"] = lastfm.user_playcount(inferred) if lastfm else inferred.get("lastfm_playcount")
+    inferred["koito_playcount"] = koito.user_playcount(inferred) if koito else inferred.get("koito_playcount")
+    inferred["display_koito_stats"] = settings.display_koito_stats
     inferred["lyric_index"] = -1
     if lyrics and lyrics.lines and inferred.get("title"):
         lyric_index = -1

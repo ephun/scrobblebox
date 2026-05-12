@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     lastfm_api_secret: str = Field(default="", alias="LASTFM_API_SECRET")
     lastfm_session_key: str = Field(default="", alias="LASTFM_SESSION_KEY")
     lastfm_username: str = Field(default="", alias="LASTFM_USERNAME")
+    listenbrainz_url: str = Field(default="", alias="LISTENBRAINZ_URL")
+    listenbrainz_token: str = Field(default="", alias="LISTENBRAINZ_TOKEN")
+    koito_url: str = Field(default="", alias="KOITO_URL")
+    koito_token: str = Field(default="", alias="KOITO_TOKEN")
+    display_koito_stats: bool = Field(default=False, alias="DISPLAY_KOITO_STATS")
 
     discogs_token: str = Field(default="", alias="DISCOGS_TOKEN")
     discogs_username: str = Field(default="", alias="DISCOGS_USERNAME")
