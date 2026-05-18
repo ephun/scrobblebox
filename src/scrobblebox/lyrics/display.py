@@ -344,18 +344,9 @@ class KoitoRepository:
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "ScrobbleBox/0.1 (+https://github.com/ephun/scrobblebox)"})
-        self._cache: dict[tuple[str, str], CachedPlaycount] = {}
-        self._logged_in = False
-
-    def _login(self):
-        try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/login"
-            payload = {"username": "admin", "password": "password", "remember_me": "true"}
-            resp = self.session.post(url, data=payload, timeout=5)
-            if resp.status_code == 204 or resp.status_code == 200:
-                self._logged_in = True
-        except Exception:
-            pass
+        if settings.koito_token:
+            self.session.headers.update({"Authorization": f"Bearer {settings.koito_token}"})
+        self._cache: dict[tuple[str, str, str], CachedPlaycount] = {}
 
     def user_playcount(self, state: dict[str, Any]) -> int | None:
         if not settings.display_koito_stats or not settings.koito_url:
@@ -363,35 +354,51 @@ class KoitoRepository:
 
         artist = str(state.get("artist") or "").strip()
         title = str(state.get("title") or "").strip()
+        album = str(state.get("album") or "").strip()
         if not artist or not title:
             return None
 
-        key = (artist.casefold(), title.casefold())
+        key = (artist.casefold(), title.casefold(), album.casefold())
         cached = self._cache.get(key)
         now = utc_now()
         if cached and cached.expires_at > now:
             return cached.count
 
-        if not self._logged_in:
-            self._login()
+        if not settings.koito_token:
+            self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
+            return None
 
         try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/now-playing"
-            response = self.session.get(url, timeout=10)
+            search_url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/search"
+            response = self.session.get(search_url, params={"q": title}, timeout=10)
             response.raise_for_status()
             payload = response.json()
-            
-            if payload.get("currently_playing") and payload.get("track"):
-                track = payload.get("track")
-                if track.get("title", "").casefold() == title.casefold():
-                    count = int(track.get("listen_count", 0))
-                    self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=2))
-                    return count
-                    
-            self._cache[key] = CachedPlaycount(count=0, expires_at=now + timedelta(hours=2))
-            return 0
-            
-        except Exception as e:
+            tracks = payload.get("tracks") or []
+
+            best_track_id = None
+            for track in tracks:
+                track_title = str(track.get("title") or "").strip()
+                if track_title.casefold() != title.casefold():
+                    continue
+                artists = track.get("artists") or []
+                artist_names = [str(a.get("name") or "").strip().casefold() for a in artists]
+                if artist.casefold() not in artist_names:
+                    continue
+                best_track_id = track.get("id")
+                break
+
+            if not best_track_id:
+                self._cache[key] = CachedPlaycount(count=0, expires_at=now + timedelta(hours=1))
+                return 0
+
+            track_url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/track"
+            track_resp = self.session.get(track_url, params={"id": best_track_id}, timeout=10)
+            track_resp.raise_for_status()
+            track_payload = track_resp.json()
+            count = int(track_payload.get("listen_count") or 0)
+            self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=6))
+            return count
+        except Exception:
             self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
             return None
 
@@ -441,6 +448,18 @@ def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], star
     return state
 
 
+def max_confirmed_offset_seconds(state: dict[str, Any]) -> float:
+    values: list[float] = []
+    for raw in list(state.get("offset_seconds_samples") or []):
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            values.append(value)
+    return max(values) if values else 0.0
+
+
 def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics: LyricsDocument | None) -> tuple[dict[str, Any], LyricsDocument | None, int]:
     state = dict(raw_state)
     started_at = averaged_started_at(state)
@@ -450,9 +469,16 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
     release_tracks = list(state.get("release_tracks") or [])
     position = state.get("position")
     side = state.get("side")
+    current_duration = estimated_duration_seconds(state, initial_lyrics)
     if not release_tracks or not position:
-        duration = estimated_duration_seconds(state, initial_lyrics)
-        return state, initial_lyrics, duration
+        return state, initial_lyrics, current_duration
+
+    confirmed_offset = max_confirmed_offset_seconds(state)
+    updated_at = parse_iso_utc(state.get("updated_at"))
+    recognition_is_fresh = updated_at is not None and (utc_now() - updated_at).total_seconds() <= 30
+    if recognition_is_fresh and confirmed_offset > 0:
+        pinned_duration = max(current_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
+        return state, initial_lyrics, pinned_duration
 
     remaining = (utc_now() - started_at).total_seconds()
     current_index = next(
@@ -460,8 +486,7 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
         None,
     )
     if current_index is None:
-        duration = estimated_duration_seconds(state, initial_lyrics)
-        return state, initial_lyrics, duration
+        return state, initial_lyrics, current_duration
 
     current_started_at = started_at
     current_lyrics = initial_lyrics
@@ -475,6 +500,8 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
         track_state = state if current_index == 0 else inferred_track_state(state, track, current_started_at)
         track_lyrics = current_lyrics if current_index == 0 else repo.load(track_state)
         track_duration = estimated_duration_seconds(track_state, track_lyrics)
+        if current_index == 0 and confirmed_offset > 0:
+            track_duration = max(track_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
         if remaining <= track_duration:
             if current_index == 0:
                 return state, track_lyrics, track_duration
@@ -485,8 +512,7 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
         current_index += 1
         current_started_at = current_started_at + timedelta(seconds=track_duration)
 
-    duration = estimated_duration_seconds(state, initial_lyrics)
-    return state, initial_lyrics, duration
+    return state, initial_lyrics, current_duration
 
 
 def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:

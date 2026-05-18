@@ -467,34 +467,6 @@ def utc_now() -> datetime:
 
 
 def forward_only(previous: dict | None, current: dict) -> dict:
-    if not previous or not previous.get("title"):
-        return current
-    if not current.get("title"):
-        return current
-
-    # We only care about stabilizing if we are on the same track
-    if same_track(previous, current):
-        prev_elapsed = float(previous.get("elapsed_seconds") or 0)
-        curr_elapsed = float(current.get("elapsed_seconds") or 0)
-        
-        # If the server tries to pull us backward in time, freeze the UI.
-        if curr_elapsed < prev_elapsed:
-            current = dict(current)
-            # Freeze the started_at time mathematically so the elapsed time doesn't jump
-            frozen_started = utc_now() - timedelta(seconds=prev_elapsed)
-            current["started_at"] = frozen_started.isoformat()
-            current["elapsed_seconds"] = prev_elapsed
-            
-            # Lock the lyrics to the previous state to prevent jitter
-            previous_index = int(previous.get("lyric_index", -1))
-            current_index = int(current.get("lyric_index", -1))
-            
-            if previous_index >= current_index:
-                current["lyric_index"] = previous_index
-                current["previous_lyric"] = previous.get("previous_lyric", current.get("previous_lyric", ""))
-                current["current_lyric"] = previous.get("current_lyric", current.get("current_lyric", ""))
-                current["next_lyric"] = previous.get("next_lyric", current.get("next_lyric", ""))
-                
     return current
 
 
