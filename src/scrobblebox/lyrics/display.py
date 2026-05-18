@@ -207,11 +207,7 @@ class LyricRepository:
         plain = result.get("plainLyrics")
         if plain:
             return LyricsDocument(
-                lines=[
-                    LyricLine(float(index * 4), line)
-                    for index, line in enumerate(str(plain).splitlines())
-                    if line.strip()
-                ],
+                lines=[],
                 instrumental=bool(result.get("instrumental", False)),
             )
         return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
