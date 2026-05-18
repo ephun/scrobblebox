@@ -374,10 +374,10 @@ HTML = """<!doctype html>
       els.chip.textContent = chipLabel;
       if (s.display_koito_stats) {
         if (typeof s.koito_playcount === 'number') {
-          els.lastfmChip.textContent = s.koito_playcount === 1 ? 'Koito 1 play' : `Koito ${s.koito_playcount} plays`;
+          els.lastfmChip.textContent = s.koito_playcount === 1 ? '1 play' : `${s.koito_playcount} plays`;
           els.lastfmChip.style.display = 'inline-flex';
         } else {
-          els.lastfmChip.textContent = 'Koito --';
+          els.lastfmChip.textContent = '-- plays';
           els.lastfmChip.style.display = playing ? 'inline-flex' : 'none';
         }
       } else if (typeof s.lastfm_playcount === 'number') {

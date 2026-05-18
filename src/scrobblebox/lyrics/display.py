@@ -346,35 +346,57 @@ class KoitoRepository:
         self.session.headers.update({"User-Agent": "ScrobbleBox/0.1 (+https://github.com/ephun/scrobblebox)"})
         if settings.koito_token:
             self.session.headers.update({"Authorization": f"Bearer {settings.koito_token}"})
-        self._cache: dict[tuple[str, str], CachedPlaycount] = {}
+        self._cache: dict[tuple[str, str, str], CachedPlaycount] = {}
 
     def user_playcount(self, state: dict[str, Any]) -> int | None:
-        if not settings.display_koito_stats or not settings.koito_url or not settings.koito_token:
+        if not settings.display_koito_stats or not settings.koito_url:
             return None
-            
+
         artist = str(state.get("artist") or "").strip()
         title = str(state.get("title") or "").strip()
+        album = str(state.get("album") or "").strip()
         if not artist or not title:
             return None
 
-        key = (artist.casefold(), title.casefold())
+        key = (artist.casefold(), title.casefold(), album.casefold())
         cached = self._cache.get(key)
         now = utc_now()
         if cached and cached.expires_at > now:
             return cached.count
 
-        params = {
-            "artist": artist,
-            "track": title,
-            "limit": 1
-        }
+        if not settings.koito_token:
+            self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
+            return None
+
         try:
-            url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/listens"
-            response = self.session.get(url, params=params, timeout=10)
+            search_url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/search"
+            response = self.session.get(search_url, params={"q": title}, timeout=10)
             response.raise_for_status()
             payload = response.json()
-            count = int(payload.get("total", 0))
-            self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=2))
+            tracks = payload.get("tracks") or []
+
+            best_track_id = None
+            for track in tracks:
+                track_title = str(track.get("title") or "").strip()
+                if track_title.casefold() != title.casefold():
+                    continue
+                artists = track.get("artists") or []
+                artist_names = [str(a.get("name") or "").strip().casefold() for a in artists]
+                if artist.casefold() not in artist_names:
+                    continue
+                best_track_id = track.get("id")
+                break
+
+            if not best_track_id:
+                self._cache[key] = CachedPlaycount(count=0, expires_at=now + timedelta(hours=1))
+                return 0
+
+            track_url = f"{settings.koito_url.rstrip('/')}/apis/web/v1/track"
+            track_resp = self.session.get(track_url, params={"id": best_track_id}, timeout=10)
+            track_resp.raise_for_status()
+            track_payload = track_resp.json()
+            count = int(track_payload.get("listen_count") or 0)
+            self._cache[key] = CachedPlaycount(count=count, expires_at=now + timedelta(hours=6))
             return count
         except Exception:
             self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
@@ -426,6 +448,18 @@ def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], star
     return state
 
 
+def max_confirmed_offset_seconds(state: dict[str, Any]) -> float:
+    values: list[float] = []
+    for raw in list(state.get("offset_seconds_samples") or []):
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            values.append(value)
+    return max(values) if values else 0.0
+
+
 def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics: LyricsDocument | None) -> tuple[dict[str, Any], LyricsDocument | None, int]:
     state = dict(raw_state)
     started_at = averaged_started_at(state)
@@ -440,6 +474,7 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
         return state, initial_lyrics, duration
 
     remaining = (utc_now() - started_at).total_seconds()
+    confirmed_offset = max_confirmed_offset_seconds(state)
     current_index = next(
         (i for i, item in enumerate(release_tracks) if item.get("position") == position),
         None,
@@ -460,6 +495,8 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
         track_state = state if current_index == 0 else inferred_track_state(state, track, current_started_at)
         track_lyrics = current_lyrics if current_index == 0 else repo.load(track_state)
         track_duration = estimated_duration_seconds(track_state, track_lyrics)
+        if current_index == 0 and confirmed_offset > 0:
+            track_duration = max(track_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
         if remaining <= track_duration:
             if current_index == 0:
                 return state, track_lyrics, track_duration
