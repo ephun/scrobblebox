@@ -498,7 +498,13 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
             break
 
         track_state = state if current_index == 0 else inferred_track_state(state, track, current_started_at)
-        track_lyrics = current_lyrics if current_index == 0 else repo.load(track_state)
+        if current_index == 0:
+            track_lyrics = current_lyrics
+        else:
+            try:
+                track_lyrics = repo.load(track_state)
+            except Exception:
+                track_lyrics = None
         track_duration = estimated_duration_seconds(track_state, track_lyrics)
         if current_index == 0 and confirmed_offset > 0:
             track_duration = max(track_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
@@ -573,7 +579,12 @@ def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, ha
 
 
 def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: LastfmRepository | None = None, koito: KoitoRepository | None = None) -> dict[str, Any]:
-    initial_lyrics = repo.load(raw_state) if raw_state.get("title") else None
+    initial_lyrics = None
+    if raw_state.get("title"):
+        try:
+            initial_lyrics = repo.load(raw_state)
+        except Exception:
+            initial_lyrics = None
     inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
     started_at = averaged_started_at(inferred)
     elapsed = max(0.0, (utc_now() - started_at).total_seconds()) if started_at else 0.0
@@ -591,7 +602,10 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: L
         if current_index is not None and current_index + 1 < len(release_tracks):
             next_track = release_tracks[current_index + 1]
             if next_track.get("side") == inferred.get("side"):
-                repo.load(inferred_track_state(inferred, next_track, utc_now()))
+                try:
+                    repo.load(inferred_track_state(inferred, next_track, utc_now()))
+                except Exception:
+                    pass
 
     inferred["elapsed_seconds"] = elapsed
     inferred["display_duration_seconds"] = int(display_duration or 0)
