@@ -207,11 +207,7 @@ class LyricRepository:
         plain = result.get("plainLyrics")
         if plain:
             return LyricsDocument(
-                lines=[
-                    LyricLine(float(index * 4), line)
-                    for index, line in enumerate(str(plain).splitlines())
-                    if line.strip()
-                ],
+                lines=[],
                 instrumental=bool(result.get("instrumental", False)),
             )
         return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
@@ -319,7 +315,7 @@ class LastfmRepository:
         plain = result.get("plainLyrics")
         if plain:
             return LyricsDocument(
-                lines=[LyricLine(float(index * 4), line) for index, line in enumerate(str(plain).splitlines()) if line.strip()],
+                lines=[],
                 instrumental=bool(result.get("instrumental", False)),
             )
         return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
@@ -469,19 +465,24 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
     release_tracks = list(state.get("release_tracks") or [])
     position = state.get("position")
     side = state.get("side")
+    current_duration = estimated_duration_seconds(state, initial_lyrics)
     if not release_tracks or not position:
-        duration = estimated_duration_seconds(state, initial_lyrics)
-        return state, initial_lyrics, duration
+        return state, initial_lyrics, current_duration
+
+    confirmed_offset = max_confirmed_offset_seconds(state)
+    updated_at = parse_iso_utc(state.get("updated_at"))
+    recognition_is_fresh = updated_at is not None and (utc_now() - updated_at).total_seconds() <= 30
+    if recognition_is_fresh and confirmed_offset > 0:
+        pinned_duration = max(current_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
+        return state, initial_lyrics, pinned_duration
 
     remaining = (utc_now() - started_at).total_seconds()
-    confirmed_offset = max_confirmed_offset_seconds(state)
     current_index = next(
         (i for i, item in enumerate(release_tracks) if item.get("position") == position),
         None,
     )
     if current_index is None:
-        duration = estimated_duration_seconds(state, initial_lyrics)
-        return state, initial_lyrics, duration
+        return state, initial_lyrics, current_duration
 
     current_started_at = started_at
     current_lyrics = initial_lyrics
@@ -493,7 +494,13 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
             break
 
         track_state = state if current_index == 0 else inferred_track_state(state, track, current_started_at)
-        track_lyrics = current_lyrics if current_index == 0 else repo.load(track_state)
+        if current_index == 0:
+            track_lyrics = current_lyrics
+        else:
+            try:
+                track_lyrics = repo.load(track_state)
+            except Exception:
+                track_lyrics = None
         track_duration = estimated_duration_seconds(track_state, track_lyrics)
         if current_index == 0 and confirmed_offset > 0:
             track_duration = max(track_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
@@ -507,8 +514,7 @@ def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics
         current_index += 1
         current_started_at = current_started_at + timedelta(seconds=track_duration)
 
-    duration = estimated_duration_seconds(state, initial_lyrics)
-    return state, initial_lyrics, duration
+    return state, initial_lyrics, current_duration
 
 
 def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:
@@ -569,7 +575,12 @@ def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, ha
 
 
 def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: LastfmRepository | None = None, koito: KoitoRepository | None = None) -> dict[str, Any]:
-    initial_lyrics = repo.load(raw_state) if raw_state.get("title") else None
+    initial_lyrics = None
+    if raw_state.get("title"):
+        try:
+            initial_lyrics = repo.load(raw_state)
+        except Exception:
+            initial_lyrics = None
     inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
     started_at = averaged_started_at(inferred)
     elapsed = max(0.0, (utc_now() - started_at).total_seconds()) if started_at else 0.0
@@ -587,7 +598,10 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: L
         if current_index is not None and current_index + 1 < len(release_tracks):
             next_track = release_tracks[current_index + 1]
             if next_track.get("side") == inferred.get("side"):
-                repo.load(inferred_track_state(inferred, next_track, utc_now()))
+                try:
+                    repo.load(inferred_track_state(inferred, next_track, utc_now()))
+                except Exception:
+                    pass
 
     inferred["elapsed_seconds"] = elapsed
     inferred["display_duration_seconds"] = int(display_duration or 0)
