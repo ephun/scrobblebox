@@ -39,7 +39,7 @@ HTML = """<!doctype html>
       --accent-2: #9af0b7;
       --shadow: 0 28px 90px rgba(0, 0, 0, 0.52);
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; cursor: none !important; }
     body {
       margin: 0;
       min-height: 100vh;
