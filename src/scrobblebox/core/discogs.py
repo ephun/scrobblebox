@@ -44,6 +44,27 @@ def track_side(position: str | None) -> str | None:
     return match.group(1) if match else None
 
 
+def title_part_suffix(value: str) -> str | None:
+    normalized = normalize_text(value)
+    match = re.search(r"(?:pt|part|pts|parts)\s+(one|two|three|four|five|six|seven|eight|nine|ten|[0-9]+)", normalized)
+    if not match:
+        return None
+    token = match.group(1)
+    mapping = {
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5",
+        "six": "6",
+        "seven": "7",
+        "eight": "8",
+        "nine": "9",
+        "ten": "10",
+    }
+    return mapping.get(token, token)
+
+
 @dataclass(slots=True)
 class CollectionRelease:
     release_id: int
@@ -136,10 +157,18 @@ class DiscogsClient:
 
             entry_title = str(entry.get("title", ""))
             entry_artists = [artist.get("name", "") for artist in entry.get("artists", [])] or release_artists
+            recognition_title = normalize_text(recognition.title)
+            entry_title_normalized = normalize_text(entry_title)
             title_score = fuzz.token_set_ratio(
-                normalize_text(recognition.title),
-                normalize_text(entry_title),
+                recognition_title,
+                entry_title_normalized,
             )
+            recognition_part = title_part_suffix(recognition.title)
+            entry_part = title_part_suffix(entry_title)
+            if recognition_title == entry_title_normalized:
+                title_score += 25
+            elif recognition_part != entry_part:
+                title_score -= 35
             artist_score = self._best_artist_score(recognition.artist, entry_artists) if entry_artists else 0
             total = title_score + artist_score
             track = Track(
