@@ -108,10 +108,20 @@ def resolve_alsa_input_device(device_name: str) -> str | None:
 
 
 def resolve_input_backend(device_name: str) -> ResolvedInput:
+    force_backend = getattr(settings, "audio_force_backend", "").strip().lower()
+    forced_alsa_device = getattr(settings, "audio_alsa_device", "").strip()
+
+    if force_backend == "arecord":
+        alsa_device = forced_alsa_device or resolve_alsa_input_device(device_name)
+        if alsa_device:
+            LOGGER.info("Forcing ALSA capture via arecord using device %s", alsa_device)
+            return ResolvedInput(backend="arecord", alsa_device=alsa_device)
+        raise RuntimeError(f"Forced ALSA backend requested but no ALSA device was resolved for {device_name!r}")
+
     try:
         return ResolvedInput(backend="sounddevice", device=resolve_input_device(device_name))
     except RuntimeError:
-        alsa_device = resolve_alsa_input_device(device_name)
+        alsa_device = forced_alsa_device or resolve_alsa_input_device(device_name)
         if alsa_device:
             LOGGER.warning(
                 "Falling back to ALSA capture via arecord for %r using device %s",
@@ -120,7 +130,6 @@ def resolve_input_backend(device_name: str) -> ResolvedInput:
             )
             return ResolvedInput(backend="arecord", alsa_device=alsa_device)
         raise
-
 
 def _read_exact(stream, size: int) -> bytes:
     buffer = bytearray()

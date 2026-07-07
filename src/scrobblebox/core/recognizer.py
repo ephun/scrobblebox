@@ -26,9 +26,37 @@ SEARCH_URL = (
 SEARCH_DEVICES = ("iphone", "android", "web")
 
 
+def _boost_for_recognition(samples: np.ndarray) -> np.ndarray:
+    arr = np.asarray(samples, dtype=np.float32)
+    if arr.size == 0:
+        return arr
+
+    peak = float(np.max(np.abs(arr)))
+    rms = float(np.sqrt(np.mean(np.square(arr))))
+    if peak <= 1e-6:
+        return arr
+
+    target_peak = 0.92
+    target_rms = 0.12
+    gain_peak = target_peak / peak
+    gain_rms = (target_rms / rms) if rms > 1e-6 else gain_peak
+    gain = min(gain_peak, gain_rms, 40.0)
+
+    if gain > 1.05:
+        LOGGER.info(
+            "Boosting clip for recognition: rms=%.4f peak=%.4f gain=%.2fx",
+            rms,
+            peak,
+            gain,
+        )
+
+    boosted = arr * gain
+    return np.clip(boosted, -1.0, 1.0)
+
+
 def _to_pcm16(samples: np.ndarray) -> np.ndarray:
-    clipped = np.clip(samples, -1.0, 1.0)
-    return (clipped * 32767).astype(np.int16)
+    boosted = _boost_for_recognition(samples)
+    return (boosted * 32767).astype(np.int16)
 
 
 @dataclass(slots=True)
@@ -55,6 +83,7 @@ class ShazamRecognizer:
 
         LOGGER.info("Submitting clip to Shazam: %s", clip_path)
         payload = asyncio.run(self._recognize_file(clip_path))
+        LOGGER.info("Shazam response summary: matches=%s track=%s", len(payload.get("matches", [])), bool(payload.get("track")))
         track = payload.get("track")
         if not track:
             LOGGER.info("Shazam did not recognize the latest clip")

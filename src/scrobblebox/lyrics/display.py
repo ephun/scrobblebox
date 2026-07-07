@@ -184,8 +184,12 @@ class LyricRepository:
                     if not results:
                         continue
 
-                    best = results[0]
-                    document = self._document_from_result(best)
+                    scored: list[tuple[float, dict[str, Any], LyricsDocument]] = []
+                    for candidate in results:
+                        document = self._document_from_result(candidate)
+                        scored.append((self._candidate_score(state, candidate, document), candidate, document))
+                    scored.sort(key=lambda item: item[0], reverse=True)
+                    _, best, document = scored[0]
                     target = next((path for path in candidates if path.suffix.lower() == ".json"), None)
                     if target is not None:
                         target.parent.mkdir(parents=True, exist_ok=True)
@@ -211,6 +215,51 @@ class LyricRepository:
                 instrumental=bool(result.get("instrumental", False)),
             )
         return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
+
+    def _candidate_score(self, state: dict[str, Any], result: dict[str, Any], document: LyricsDocument) -> float:
+        score = 0.0
+        if result.get("syncedLyrics"):
+            score += 100.0
+        elif result.get("plainLyrics"):
+            score += 10.0
+
+        title = str(state.get("lyric_title") or state.get("title") or "").strip().casefold()
+        artist = str(state.get("lyric_artist") or state.get("artist") or "").strip().casefold()
+        album = str(state.get("lyric_album") or state.get("album") or "").strip().casefold()
+        if str(result.get("trackName") or "").strip().casefold() == title:
+            score += 20.0
+        if str(result.get("artistName") or "").strip().casefold() == artist:
+            score += 20.0
+        if album and str(result.get("albumName") or "").strip().casefold() == album:
+            score += 15.0
+
+        explicit_duration = state.get("duration_seconds")
+        candidate_duration = result.get("duration")
+        try:
+            explicit_duration = float(explicit_duration) if explicit_duration else None
+        except (TypeError, ValueError):
+            explicit_duration = None
+        try:
+            candidate_duration = float(candidate_duration) if candidate_duration else None
+        except (TypeError, ValueError):
+            candidate_duration = None
+        if explicit_duration and candidate_duration:
+            diff = abs(explicit_duration - candidate_duration)
+            score += max(0.0, 20.0 - min(diff, 20.0))
+
+        if document.lines:
+            last_ts = float(document.lines[-1].time_seconds)
+            if candidate_duration:
+                diff = abs(candidate_duration - last_ts)
+                score += max(0.0, 15.0 - min(diff, 15.0))
+            if len(document.lines) >= 4:
+                intervals = [round(document.lines[i + 1].time_seconds - document.lines[i].time_seconds, 2) for i in range(len(document.lines) - 1)]
+                repeated = max(intervals.count(value) for value in set(intervals))
+                if repeated >= max(6, len(intervals) // 2):
+                    score -= 40.0
+                if all(abs(value - 4.0) < 0.01 for value in intervals[: min(8, len(intervals))]):
+                    score -= 60.0
+        return score
 
     def _parse_lrc(self, text: str, *, instrumental: bool = False) -> LyricsDocument:
         lines: list[LyricLine] = []

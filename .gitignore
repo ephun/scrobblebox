@@ -27,3 +27,7 @@ local/
 # IDEs
 .idea/
 .vscode/
+
+# Runtime state & cached data
+runtime/
+/lyrics/

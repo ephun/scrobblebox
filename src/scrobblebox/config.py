@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     audio_sample_rate: int = Field(default=44100, alias="AUDIO_SAMPLE_RATE")
     audio_channels: int = Field(default=2, alias="AUDIO_CHANNELS")
     audio_block_seconds: float = Field(default=0.5, alias="AUDIO_BLOCK_SECONDS")
+    audio_force_backend: str = Field(default="", alias="AUDIO_FORCE_BACKEND")
+    audio_alsa_device: str = Field(default="", alias="AUDIO_ALSA_DEVICE")
     shazam_clip_seconds: int = Field(default=12, alias="SHAZAM_CLIP_SECONDS")
     silence_threshold: float = Field(default=0.01, alias="SILENCE_THRESHOLD")
     silence_tolerance_seconds: int = Field(default=5, alias="SILENCE_TOLERANCE_SECONDS")
