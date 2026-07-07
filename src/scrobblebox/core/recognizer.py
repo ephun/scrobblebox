@@ -59,6 +59,32 @@ def _to_pcm16(samples: np.ndarray) -> np.ndarray:
     return (boosted * 32767).astype(np.int16)
 
 
+def _extract_album(track: dict) -> str | None:
+    """Best-effort album name from a Shazam track payload.
+
+    Shazam nests album under sections[].metadata[], but that array is often
+    missing or empty, so every access is guarded (the old [{}] default only
+    covered a missing key, not an empty list, and crashed the service).
+    Prefer a metadata entry whose title is "Album"; fall back to the first
+    non-empty text value.
+    """
+    fallback = None
+    for section in track.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for item in section.get("metadata") or []:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if not text:
+                continue
+            if fallback is None:
+                fallback = str(text)
+            if str(item.get("title", "")).strip().lower() == "album":
+                return str(text)
+    return fallback
+
+
 @dataclass(slots=True)
 class ShazamRecognizer:
     """Recognize audio clips with ShazamIO."""
@@ -90,16 +116,15 @@ class ShazamRecognizer:
             return None
 
         offset_seconds = 0.0
-        match = payload.get("matches", [{}])[0]
+        matches = payload.get("matches") or []
+        match = matches[0] if matches else {}
         if isinstance(match, dict):
             offset_seconds = float(match.get("offset", 0) or 0)
 
         return RecognitionResult(
             title=str(track.get("title", "")),
             artist=str(track.get("subtitle", "")),
-            album=str(track.get("sections", [{}])[0].get("metadata", [{}])[0].get("text", ""))
-            if track.get("sections")
-            else None,
+            album=_extract_album(track),
             offset_seconds=offset_seconds,
             shazam_track_id=str(track.get("key", "")) or None,
             raw=payload,
