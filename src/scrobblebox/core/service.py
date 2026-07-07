@@ -87,6 +87,10 @@ class CoreService:
                     chunk = capture.block_queue.get(timeout=1)
                 except Empty:
                     self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
+                    if not capture.is_healthy():
+                        raise RuntimeError(
+                            "Audio capture pipeline died; exiting so systemd restarts with a fresh stream"
+                        )
                     continue
 
                 buffer.append(chunk)

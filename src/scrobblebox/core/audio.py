@@ -175,6 +175,7 @@ class AudioCapture:
     _arecord_process: subprocess.Popen[bytes] | None = field(init=False, default=None)
     _reader_thread: threading.Thread | None = field(init=False, default=None)
     _stop_event: threading.Event = field(init=False, default_factory=threading.Event)
+    _failed: threading.Event = field(init=False, default_factory=threading.Event)
 
     def __post_init__(self) -> None:
         resolved = resolve_input_backend(self.device_name)
@@ -183,10 +184,19 @@ class AudioCapture:
         self.alsa_device = resolved.alsa_device
         self.blocksize = max(1, int(self.samplerate * self.block_seconds))
 
+    def is_healthy(self) -> bool:
+        """Whether the capture pipeline is still delivering audio."""
+        if self._failed.is_set():
+            return False
+        if self.backend == "arecord":
+            return self._arecord_process is not None and self._arecord_process.poll() is None
+        return self._stream is not None and bool(self._stream.active)
+
     def __enter__(self) -> "AudioCapture":
         LOGGER.info("Opening audio input stream via %s", self.backend)
         self._next_chunk_started_at = None
         self._stop_event.clear()
+        self._failed.clear()
         if self.backend == "arecord":
             self._start_arecord()
         else:
@@ -308,6 +318,9 @@ class AudioCapture:
             stderr_output = self._arecord_process.stderr.read().decode("utf-8", errors="ignore").strip()
             if stderr_output:
                 LOGGER.warning("arecord exited unexpectedly: %s", stderr_output)
+        if not self._stop_event.is_set():
+            LOGGER.error("arecord capture ended unexpectedly; marking capture as failed")
+            self._failed.set()
 
 
 @dataclass(slots=True)
