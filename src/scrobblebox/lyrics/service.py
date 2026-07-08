@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from scrobblebox.config import settings
-from scrobblebox.lyrics.display import KoitoRepository, LastfmRepository, LyricRepository, build_view_model, parse_iso_utc
+from scrobblebox.lyrics.display import (
+    ElapsedSmoother,
+    KoitoRepository,
+    LastfmRepository,
+    LyricRepository,
+    build_view_model,
+)
 from scrobblebox.lyrics.state import StateStore
 
 
@@ -435,54 +440,16 @@ HTML = """<!doctype html>
 """
 
 
-def track_index(state: dict) -> int | None:
-    release_tracks = list(state.get("release_tracks") or [])
-    position = state.get("position")
-    if not position or not release_tracks:
-        return None
-    for index, item in enumerate(release_tracks):
-        if item.get("position") == position:
-            return index
-    return None
-
-
-def same_release_side(left: dict, right: dict) -> bool:
-    return (
-        bool(left.get("release_id"))
-        and left.get("release_id") == right.get("release_id")
-        and left.get("side") == right.get("side")
-    )
-
-
-def same_track(left: dict, right: dict) -> bool:
-    return (
-        same_release_side(left, right)
-        and left.get("position") == right.get("position")
-        and left.get("title") == right.get("title")
-    )
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def forward_only(previous: dict | None, current: dict) -> dict:
-    return current
-
-
 def build_handler(state_store: StateStore, repo: LyricRepository, lastfm: LastfmRepository, koito: KoitoRepository) -> type[BaseHTTPRequestHandler]:
-    last_view: dict | None = None
+    smoother = ElapsedSmoother()
 
     class LyricsHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
-            nonlocal last_view
             if self.path in {"/", "/index.html"}:
                 self._send(HTTPStatus.OK, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 return
             if self.path == "/api/now-playing":
-                model = build_view_model(state_store.read(), repo, lastfm, koito)
-                model = forward_only(last_view, model)
-                last_view = model
+                model = build_view_model(state_store.read(), repo, lastfm, koito, smoother)
                 payload = json.dumps(model).encode("utf-8")
                 self._send(HTTPStatus.OK, payload, "application/json; charset=utf-8")
                 return

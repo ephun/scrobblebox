@@ -33,6 +33,7 @@ class DisplayState:
     release_tracks: list[dict] | None = None
     timing_started_at_samples: list[str] = field(default_factory=list)
     offset_seconds_samples: list[float] = field(default_factory=list)
+    last_recognition_at: str | None = None
     message: str = ""
 
     @classmethod
@@ -54,6 +55,7 @@ class DisplayState:
         status: str = "playing",
         timing_started_at_samples: list[datetime] | None = None,
         offset_seconds_samples: list[float] | None = None,
+        last_recognition_at: datetime | None = None,
     ) -> "DisplayState":
         return cls(
             status=status,
@@ -86,6 +88,11 @@ class DisplayState:
                 for item in (timing_started_at_samples or [started_at])
             ],
             offset_seconds_samples=list(offset_seconds_samples or []),
+            last_recognition_at=(
+                last_recognition_at.astimezone(timezone.utc).isoformat()
+                if last_recognition_at
+                else None
+            ),
         )
 
 

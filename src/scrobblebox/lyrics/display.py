@@ -85,6 +85,8 @@ DEFAULT_TRACK_SECONDS = 210
 LYRIC_END_GRACE_SECONDS = 8
 MIN_TRACK_SECONDS = 90
 LYRIC_PLACEHOLDER = "\u266a"
+TIMING_OUTLIER_SECONDS = 8.0
+RECOGNITION_PIN_SECONDS = 30.0
 
 
 class LyricRepository:
@@ -316,74 +318,6 @@ class LastfmRepository:
             self._cache[key] = CachedPlaycount(count=None, expires_at=now + timedelta(minutes=5))
             return None
 
-    def _fetch_and_cache(self, state: dict[str, Any], candidates: list[Path]) -> LyricsDocument | None:
-        titles = query_variants(str(state.get("lyric_title") or state.get("title") or ""))
-        artists = artist_query_variants(str(state.get("lyric_artist") or state.get("artist") or ""))
-        albums = query_variants(str(state.get("lyric_album") or state.get("album") or ""))
-        if not titles or not artists:
-            return None
-        duration = state.get("duration_seconds")
-        for title in titles:
-            for artist in artists:
-                for album in albums or [""]:
-                    params = {
-                        "track_name": title,
-                        "artist_name": artist,
-                    }
-                    if album:
-                        params["album_name"] = album
-                    if duration:
-                        params["duration"] = duration
-
-                    response = self.session.get("https://lrclib.net/api/search", params=params, timeout=20)
-                    response.raise_for_status()
-                    results = response.json()
-                    if not results:
-                        continue
-
-                    best = results[0]
-                    document = self._document_from_result(best)
-                    target = next((path for path in candidates if path.suffix.lower() == ".json"), None)
-                    if target is not None:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        payload = {
-                            "instrumental": bool(best.get("instrumental", False)),
-                            "lines": [
-                                {"time_seconds": line.time_seconds, "text": line.text}
-                                for line in document.lines
-                            ],
-                        }
-                        target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-                    return document
-        return None
-
-    def _document_from_result(self, result: dict[str, Any]) -> LyricsDocument:
-        synced = result.get("syncedLyrics")
-        if synced:
-            return self._parse_lrc(str(synced), instrumental=bool(result.get("instrumental", False)))
-        plain = result.get("plainLyrics")
-        if plain:
-            return LyricsDocument(
-                lines=[],
-                instrumental=bool(result.get("instrumental", False)),
-            )
-        return LyricsDocument(lines=[], instrumental=bool(result.get("instrumental", False)))
-
-    def _parse_lrc(self, text: str, *, instrumental: bool = False) -> LyricsDocument:
-        lines: list[LyricLine] = []
-        for raw_line in text.splitlines():
-            matches = list(re.finditer(r"\[(\d+):(\d+(?:\.\d+)?)\]", raw_line))
-            if not matches:
-                continue
-            content = re.sub(r"\[[^\]]+\]", "", raw_line).strip()
-            for match in matches:
-                minutes = int(match.group(1))
-                seconds = float(match.group(2))
-                lines.append(LyricLine(minutes * 60 + seconds, content))
-        lines.sort(key=lambda item: item.time_seconds)
-        return LyricsDocument(lines=lines, instrumental=instrumental)
-
-
 
 class KoitoRepository:
     def __init__(self) -> None:
@@ -467,12 +401,27 @@ def timing_sample_datetimes(state: dict[str, Any]) -> list[datetime]:
     return samples
 
 
-def averaged_started_at(state: dict[str, Any]) -> datetime | None:
+def robust_started_at(state: dict[str, Any]) -> datetime | None:
+    """Estimate when the current track started from recognition timing samples.
+
+    Uses the median to anchor, then averages only the samples within
+    TIMING_OUTLIER_SECONDS of it. A single bad Shazam offset (common right at
+    the start of a track, when the clip matches the wrong section) previously
+    poisoned a plain mean and made the lyric clock lurch.
+    """
     samples = timing_sample_datetimes(state)
     if not samples:
         return parse_iso_utc(state.get("started_at"))
-    average_timestamp = sum(item.timestamp() for item in samples) / len(samples)
-    return datetime.fromtimestamp(average_timestamp, tz=timezone.utc)
+    timestamps = sorted(item.timestamp() for item in samples)
+    mid = len(timestamps) // 2
+    if len(timestamps) % 2:
+        median = timestamps[mid]
+    else:
+        median = (timestamps[mid - 1] + timestamps[mid]) / 2
+    kept = [value for value in timestamps if abs(value - median) <= TIMING_OUTLIER_SECONDS]
+    if not kept:
+        kept = [median]
+    return datetime.fromtimestamp(sum(kept) / len(kept), tz=timezone.utc)
 
 
 def inferred_track_state(base_state: dict[str, Any], track: dict[str, Any], started_at: datetime) -> dict[str, Any]:
@@ -505,93 +454,105 @@ def max_confirmed_offset_seconds(state: dict[str, Any]) -> float:
     return max(values) if values else 0.0
 
 
-def infer_track(raw_state: dict[str, Any], repo: LyricRepository, initial_lyrics: LyricsDocument | None) -> tuple[dict[str, Any], LyricsDocument | None, int]:
+def last_recognition_datetime(state: dict[str, Any]) -> datetime | None:
+    """When the core last confirmed this track via Shazam+Discogs.
+
+    Falls back to updated_at for states written by older cores. The pin must
+    key off actual recognitions, not arbitrary state writes: the old code used
+    updated_at, which the core refreshed constantly, so the display stayed
+    pinned to a finished track and next-track inference never ran.
+    """
+    return parse_iso_utc(state.get("last_recognition_at")) or parse_iso_utc(state.get("updated_at"))
+
+
+def infer_track(
+    raw_state: dict[str, Any],
+    repo: LyricRepository,
+    initial_lyrics: LyricsDocument | None,
+) -> tuple[dict[str, Any], LyricsDocument | None, int]:
+    """Resolve which track is actually playing right now.
+
+    While a recognition is fresh, trust the recognized track. Once it goes
+    stale and the wall clock says the recognized track must have ended, walk
+    forward through the release tracklist (same side only — a side flip needs
+    a needle drop we cannot infer) and present the track the stylus should be
+    on, so the display keeps up between recognitions.
+    """
     state = dict(raw_state)
-    started_at = averaged_started_at(state)
+    started_at = robust_started_at(state)
     if not started_at:
         return state, initial_lyrics, 0
 
+    confirmed_offset = max_confirmed_offset_seconds(state)
+    current_duration = estimated_duration_seconds(state, initial_lyrics)
+    if confirmed_offset > 0:
+        current_duration = max(current_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
+
     release_tracks = list(state.get("release_tracks") or [])
     position = state.get("position")
-    side = state.get("side")
-    current_duration = estimated_duration_seconds(state, initial_lyrics)
     if not release_tracks or not position:
         return state, initial_lyrics, current_duration
 
-    confirmed_offset = max_confirmed_offset_seconds(state)
-    updated_at = parse_iso_utc(state.get("updated_at"))
-    recognition_is_fresh = updated_at is not None and (utc_now() - updated_at).total_seconds() <= 30
-    if recognition_is_fresh and confirmed_offset > 0:
-        pinned_duration = max(current_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
-        return state, initial_lyrics, pinned_duration
+    if not state.get("audio_active"):
+        return state, initial_lyrics, current_duration
 
-    remaining = (utc_now() - started_at).total_seconds()
-    current_index = next(
+    recognized_at = last_recognition_datetime(state)
+    if recognized_at is not None and (utc_now() - recognized_at).total_seconds() <= RECOGNITION_PIN_SECONDS:
+        return state, initial_lyrics, current_duration
+
+    index = next(
         (i for i, item in enumerate(release_tracks) if item.get("position") == position),
         None,
     )
-    if current_index is None:
+    if index is None:
         return state, initial_lyrics, current_duration
 
-    current_started_at = started_at
-    current_lyrics = initial_lyrics
+    side = state.get("side")
+    elapsed = (utc_now() - started_at).total_seconds()
+    track_started_at = started_at
+    is_current = True
 
-    while current_index < len(release_tracks):
-        track = release_tracks[current_index]
-        track_side = track.get("side")
-        if current_index > 0 and track_side != side:
+    while index < len(release_tracks):
+        track = release_tracks[index]
+        if not is_current and track.get("side") != side:
             break
 
-        track_state = state if current_index == 0 else inferred_track_state(state, track, current_started_at)
-        if current_index == 0:
-            track_lyrics = current_lyrics
+        if is_current:
+            track_state: dict[str, Any] = state
+            track_lyrics = initial_lyrics
+            track_duration = current_duration
         else:
+            track_state = inferred_track_state(state, track, track_started_at)
             try:
                 track_lyrics = repo.load(track_state)
             except Exception:
                 track_lyrics = None
-        track_duration = estimated_duration_seconds(track_state, track_lyrics)
-        if current_index == 0 and confirmed_offset > 0:
-            track_duration = max(track_duration, int(confirmed_offset + LYRIC_END_GRACE_SECONDS))
-        if remaining <= track_duration:
-            if current_index == 0:
-                return state, track_lyrics, track_duration
-            inferred_started_at = utc_now() - timedelta(seconds=remaining)
-            inferred_state = inferred_track_state(state, track, inferred_started_at)
-            return inferred_state, track_lyrics, track_duration
-        remaining -= track_duration
-        current_index += 1
-        current_started_at = current_started_at + timedelta(seconds=track_duration)
+            track_duration = estimated_duration_seconds(track_state, track_lyrics)
+
+        if elapsed <= track_duration:
+            return track_state, track_lyrics, track_duration
+
+        elapsed -= track_duration
+        track_started_at = track_started_at + timedelta(seconds=track_duration)
+        index += 1
+        is_current = False
 
     return state, initial_lyrics, current_duration
 
 
-def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:
-    if not has_track:
-        return ("Listening...", "Listening...", "Waiting for lyric sync.")
-    if lyrics is None:
-        return ("", "No lyrics available.", "")
-    if lyrics.instrumental:
-        return ("", "♪", "")
-    if not lyrics.lines:
-        return ("", "No lyrics available.", "")
-
+def current_line_index(lines: list[LyricLine], elapsed_seconds: float) -> int:
+    """Index of the last line whose timestamp has passed, or -1 before the first."""
     index = -1
-    for i, line in enumerate(lyrics.lines):
+    for i, line in enumerate(lines):
         if line.time_seconds <= elapsed_seconds:
             index = i
         else:
             break
-    if index < 0:
-        next_text = lyrics.lines[0].text or LYRIC_PLACEHOLDER
-        return ("", LYRIC_PLACEHOLDER, next_text)
-    prev_text = lyrics.lines[index - 1].text if index > 0 else ""
-    current_text = lyrics.lines[index].text or LYRIC_PLACEHOLDER
-    next_text = lyrics.lines[index + 1].text if index + 1 < len(lyrics.lines) else ""
-    return (prev_text, current_text, next_text)
+    return index
 
 
-def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:
+def lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, has_track: bool) -> tuple[str, str, str]:
+    """Previous / current / next lyric card text for the display."""
     if not has_track:
         return ("Listening...", "Listening...", "Waiting for lyric sync.")
     if lyrics is None:
@@ -605,12 +566,7 @@ def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, ha
     if lyrics.lines[0].time_seconds > 0:
         display_lines = [LyricLine(0.0, LYRIC_PLACEHOLDER), *lyrics.lines]
 
-    index = -1
-    for i, line in enumerate(display_lines):
-        if line.time_seconds <= elapsed_seconds:
-            index = i
-        else:
-            break
+    index = current_line_index(display_lines, elapsed_seconds)
     if index < 0:
         next_text = display_lines[0].text or LYRIC_PLACEHOLDER
         return ("", LYRIC_PLACEHOLDER, next_text)
@@ -623,34 +579,107 @@ def stable_lyric_cards(lyrics: LyricsDocument | None, elapsed_seconds: float, ha
     return (prev_text, current_text, next_text)
 
 
-def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: LastfmRepository | None = None, koito: KoitoRepository | None = None) -> dict[str, Any]:
+class ElapsedSmoother:
+    """Keep the displayed clock steady while timing estimates shift underneath.
+
+    The timing estimate moves whenever a new recognition sample lands. Rather
+    than letting the lyric clock lurch on every poll (the start-of-track
+    "jump around for a few seconds" bug), smooth the track-start estimate:
+
+    - new track: adopt the estimate immediately
+    - tiny changes (< deadband): ignore
+    - moderate changes: slew a fraction of the gap per poll, so the display
+      glides to the corrected time over ~a second
+    - large changes: require several consecutive polls to agree before
+      snapping, so one outlier estimate never causes a visible jump
+    """
+
+    deadband_seconds: float = 0.4
+    snap_threshold_seconds: float = 6.0
+    slew_fraction: float = 0.25
+    snap_patience_polls: int = 6
+
+    def __init__(self) -> None:
+        self._track_key: str | None = None
+        self._started_at: float | None = None
+        self._divergent_polls: int = 0
+
+    def smooth(self, track_key: str, started_at: datetime | None) -> datetime | None:
+        if started_at is None:
+            self._track_key = None
+            self._started_at = None
+            self._divergent_polls = 0
+            return None
+
+        target = started_at.timestamp()
+        if self._track_key != track_key or self._started_at is None:
+            self._track_key = track_key
+            self._started_at = target
+            self._divergent_polls = 0
+            return started_at
+
+        gap = target - self._started_at
+        if abs(gap) <= self.deadband_seconds:
+            self._divergent_polls = 0
+        elif abs(gap) <= self.snap_threshold_seconds:
+            self._started_at += gap * self.slew_fraction
+            self._divergent_polls = 0
+        else:
+            self._divergent_polls += 1
+            if self._divergent_polls >= self.snap_patience_polls:
+                self._started_at = target
+                self._divergent_polls = 0
+        return datetime.fromtimestamp(self._started_at, tz=timezone.utc)
+
+
+def track_display_key(state: dict[str, Any]) -> str:
+    return f"{state.get('release_id')}:{state.get('position')}:{state.get('title')}"
+
+
+def prefetch_next_track_lyrics(state: dict[str, Any], repo: LyricRepository) -> None:
+    """Warm the lyric cache for the next track on this side."""
+    release_tracks = list(state.get("release_tracks") or [])
+    index = next(
+        (i for i, item in enumerate(release_tracks) if item.get("position") == state.get("position")),
+        None,
+    )
+    if index is None or index + 1 >= len(release_tracks):
+        return
+    next_track = release_tracks[index + 1]
+    if next_track.get("side") != state.get("side"):
+        return
+    try:
+        repo.load(inferred_track_state(state, next_track, utc_now()))
+    except Exception:
+        pass
+
+
+def build_view_model(
+    raw_state: dict[str, Any],
+    repo: LyricRepository,
+    lastfm: LastfmRepository | None = None,
+    koito: KoitoRepository | None = None,
+    smoother: ElapsedSmoother | None = None,
+) -> dict[str, Any]:
     initial_lyrics = None
     if raw_state.get("title"):
         try:
             initial_lyrics = repo.load(raw_state)
         except Exception:
             initial_lyrics = None
-    inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
-    started_at = averaged_started_at(inferred)
-    elapsed = max(0.0, (utc_now() - started_at).total_seconds()) if started_at else 0.0
 
-    # Never show backward motion: the browser increments locally between polls and the
-    # server only moves the track start earlier, never later.
-    prev_text, current_text, next_text = stable_lyric_cards(lyrics, elapsed, bool(inferred.get("title")))
+    inferred, lyrics, display_duration = infer_track(raw_state, repo, initial_lyrics)
+
+    started_at = robust_started_at(inferred)
+    if smoother is not None:
+        started_at = smoother.smooth(track_display_key(inferred), started_at)
+    elapsed = max(0.0, (utc_now() - started_at).total_seconds()) if started_at else 0.0
+    lyric_elapsed = elapsed - settings.lyric_offset_seconds
+
+    prev_text, current_text, next_text = lyric_cards(lyrics, lyric_elapsed, bool(inferred.get("title")))
 
     if inferred.get("title"):
-        release_tracks = list(inferred.get("release_tracks") or [])
-        current_index = next(
-            (i for i, item in enumerate(release_tracks) if item.get("position") == inferred.get("position")),
-            None,
-        )
-        if current_index is not None and current_index + 1 < len(release_tracks):
-            next_track = release_tracks[current_index + 1]
-            if next_track.get("side") == inferred.get("side"):
-                try:
-                    repo.load(inferred_track_state(inferred, next_track, utc_now()))
-                except Exception:
-                    pass
+        prefetch_next_track_lyrics(inferred, repo)
 
     inferred["elapsed_seconds"] = elapsed
     inferred["display_duration_seconds"] = int(display_duration or 0)
@@ -661,13 +690,9 @@ def build_view_model(raw_state: dict[str, Any], repo: LyricRepository, lastfm: L
     inferred["lastfm_playcount"] = lastfm.user_playcount(inferred) if lastfm else inferred.get("lastfm_playcount")
     inferred["koito_playcount"] = koito.user_playcount(inferred) if koito else inferred.get("koito_playcount")
     inferred["display_koito_stats"] = settings.display_koito_stats
-    inferred["lyric_index"] = -1
-    if lyrics and lyrics.lines and inferred.get("title"):
-        lyric_index = -1
-        for i, line in enumerate(lyrics.lines):
-            if line.time_seconds <= elapsed:
-                lyric_index = i
-            else:
-                break
-        inferred["lyric_index"] = lyric_index
+    inferred["lyric_index"] = (
+        current_line_index(lyrics.lines, lyric_elapsed)
+        if lyrics and lyrics.lines and inferred.get("title")
+        else -1
+    )
     return inferred

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
 
     lyrics_host: str = Field(default="0.0.0.0", alias="LYRICS_HOST")
     lyrics_port: int = Field(default=8765, alias="LYRICS_PORT")
+    # Positive values delay the lyric highlight (use if lyrics run ahead of the
+    # vinyl); negative values advance it. Applied at display time only.
+    lyric_offset_seconds: float = Field(default=0.0, alias="LYRIC_OFFSET_SECONDS")
     lyrics_directory: Path = Field(default=Path("lyrics"), alias="LYRICS_DIRECTORY")
 
     kasa_device_alias: str = Field(default="Oscilloscope", alias="KASA_DEVICE_ALIAS")

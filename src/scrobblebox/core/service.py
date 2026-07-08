@@ -78,6 +78,7 @@ class CoreService:
         audio_active = False
         last_audio_at: datetime | None = None
         last_recognition_at = datetime.min.replace(tzinfo=timezone.utc)
+        last_validated_at: datetime | None = None
         pending: PendingScrobble | None = None
         state_store.write(DisplayState.listening())
 
@@ -86,7 +87,7 @@ class CoreService:
                 try:
                     chunk = capture.block_queue.get(timeout=1)
                 except Empty:
-                    self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
+                    self._flush_scrobble(lastfm, listenbrainz, pending, state_store, last_validated_at)
                     if not capture.is_healthy():
                         raise RuntimeError(
                             "Audio capture pipeline died; exiting so systemd restarts with a fresh stream"
@@ -94,11 +95,16 @@ class CoreService:
                     continue
 
                 buffer.append(chunk)
-                self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
+                self._flush_scrobble(lastfm, listenbrainz, pending, state_store, last_validated_at)
                 if not self._is_audio_active(chunk):
-                    if last_audio_at and datetime.now(timezone.utc) - last_audio_at > timedelta(
-                        seconds=self.silence_tolerance_seconds
-                    ):
+                    silence_expired = last_audio_at is not None and datetime.now(
+                        timezone.utc
+                    ) - last_audio_at > timedelta(seconds=self.silence_tolerance_seconds)
+                    # Write the paused/listening state once per transition, not on
+                    # every silent chunk: constant rewrites kept the state file
+                    # perpetually "fresh" (blocking next-track inference in the
+                    # display) and wore the SD card for nothing.
+                    if silence_expired and audio_active:
                         audio_active = False
                         if pending:
                             state_store.write(
@@ -109,6 +115,7 @@ class CoreService:
                                     status="paused",
                                     timing_started_at_samples=pending.timing_started_at_samples,
                                     offset_seconds_samples=pending.offset_seconds_samples,
+                                    last_recognition_at=last_validated_at,
                                 )
                             )
                         else:
@@ -119,6 +126,19 @@ class CoreService:
                 if not audio_active:
                     LOGGER.info("Audio detected above threshold (rms=%.4f)", chunk.rms)
                     audio_active = True
+                    # Announce resumed playback immediately so the display can run
+                    # next-track inference instead of sitting on a stale "paused".
+                    if pending:
+                        state_store.write(
+                            DisplayState.from_track(
+                                pending.track,
+                                pending.started_at,
+                                audio_active=True,
+                                timing_started_at_samples=pending.timing_started_at_samples,
+                                offset_seconds_samples=pending.offset_seconds_samples,
+                                last_recognition_at=last_validated_at,
+                            )
+                        )
 
                 if chunk.recorded_at - last_recognition_at < timedelta(
                     seconds=self.recognition_cooldown_seconds
@@ -144,6 +164,7 @@ class CoreService:
                 if validated is None:
                     continue
 
+                last_validated_at = datetime.now(timezone.utc)
                 started_at = self._started_at_from_clip_and_response(
                     clip.started_at,
                     recognition.recognized_at,
@@ -164,6 +185,7 @@ class CoreService:
                             audio_active=True,
                             timing_started_at_samples=pending.timing_started_at_samples,
                             offset_seconds_samples=pending.offset_seconds_samples,
+                            last_recognition_at=last_validated_at,
                         )
                     )
                     LOGGER.info("Ignoring duplicate recognition for %s - %s", validated.artist, validated.title)
@@ -178,13 +200,14 @@ class CoreService:
                         audio_active=True,
                         timing_started_at_samples=pending.timing_started_at_samples,
                         offset_seconds_samples=pending.offset_seconds_samples,
+                        last_recognition_at=last_validated_at,
                     )
                 )
                 if not pending.now_playing_sent:
                     lastfm.update_now_playing(validated)
                     listenbrainz.update_now_playing(validated)
                     pending.now_playing_sent = True
-                self._flush_scrobble(lastfm, listenbrainz, pending, state_store)
+                self._flush_scrobble(lastfm, listenbrainz, pending, state_store, last_validated_at)
 
     def _flush_scrobble(
         self,
@@ -192,6 +215,7 @@ class CoreService:
         listenbrainz: ListenBrainzClient,
         pending: PendingScrobble | None,
         state_store: StateStore,
+        last_recognition_at: datetime | None = None,
     ) -> None:
         if not pending or pending.scrobbled:
             return
@@ -208,6 +232,7 @@ class CoreService:
                 status="scrobbled",
                 timing_started_at_samples=pending.timing_started_at_samples,
                 offset_seconds_samples=pending.offset_seconds_samples,
+                last_recognition_at=last_recognition_at,
             )
         )
 
