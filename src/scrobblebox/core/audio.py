@@ -337,7 +337,7 @@ class RollingAudioBuffer:
 
     def append(self, chunk: AudioChunk) -> None:
         self._chunks.append(chunk)
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.max_seconds)
+        cutoff = chunk.ended_at - timedelta(seconds=self.max_seconds)
         while self._chunks and self._chunks[0].ended_at < cutoff:
             self._chunks.popleft()
 
